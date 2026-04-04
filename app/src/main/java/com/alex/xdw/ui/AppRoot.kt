@@ -157,6 +157,7 @@ fun XdwApp(
                     onSaveNote = viewModel::saveNote,
                     onSaveJournalDescription = viewModel::updateJournalDescription,
                     onTogglePhotoVisibility = viewModel::setShowPhotosInJournal,
+                    onMoveEntry = viewModel::moveEntry,
                     onCopied = { viewModel.showSnackbar("Скопировано", durationMillis = 1_000) },
                 )
             }

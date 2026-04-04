@@ -53,13 +53,8 @@ class MainViewModel(
     val entries: StateFlow<List<WagonEntry>> = combine(
         repository.observeEntries(),
         pendingDeleteEntry,
-        settings,
-    ) { entries, pending, settings ->
-        val filtered = entries.filterNot { it.id == pending?.id }
-        when (settings.newEntryPosition) {
-            NewEntryPosition.First -> filtered
-            NewEntryPosition.Last -> filtered.asReversed()
-        }
+    ) { entries, pending ->
+        entries.filterNot { it.id == pending?.id }
     }
         .stateIn(
             scope = viewModelScope,
@@ -97,6 +92,9 @@ class MainViewModel(
 
             runCatching { repository.saveCapturedPhoto(file, scanBitmap) }
                 .onSuccess { entryId ->
+                    if (settings.value.newEntryPosition == NewEntryPosition.First) {
+                        repository.moveEntry(entryId, 0)
+                    }
                     _cameraState.value = CameraUiState(
                         statusMessage = "Запись добавлена в журнал.",
                     )
@@ -115,6 +113,16 @@ class MainViewModel(
         viewModelScope.launch {
             repository.updatePrimaryNumber(id, number)
             _events.emit(AppEvent.Snackbar("Номер обновлен", durationMillis = 1_400))
+        }
+    }
+
+    fun moveEntry(
+        entryId: Long,
+        targetIndex: Int,
+    ) {
+        viewModelScope.launch {
+            repository.moveEntry(entryId, targetIndex)
+            _events.emit(AppEvent.Snackbar("Карточка перемещена", durationMillis = 1_000))
         }
     }
 

@@ -2,6 +2,8 @@ package com.alex.xdw.ui.screens
 
 import android.content.Context
 import android.content.Intent
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -17,8 +19,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -27,6 +31,7 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -81,6 +86,7 @@ fun JournalScreen(
     onSaveNote: (Long, String) -> Unit,
     onSaveJournalDescription: (String) -> Unit,
     onTogglePhotoVisibility: (Boolean) -> Unit,
+    onMoveEntry: (Long, Int) -> Unit,
     onCopied: () -> Unit,
 ) {
     val clipboardManager = LocalClipboardManager.current
@@ -91,6 +97,7 @@ fun JournalScreen(
     var editingNoteEntry by remember { mutableStateOf<WagonEntry?>(null) }
     var deleteEntryTarget by remember { mutableStateOf<WagonEntry?>(null) }
     var photoActionTarget by remember { mutableStateOf<WagonEntry?>(null) }
+    var movingEntry by remember { mutableStateOf<WagonEntry?>(null) }
     var editingDirections by remember { mutableStateOf(false) }
     var copyListDialogVisible by remember { mutableStateOf(false) }
     var sendListDialogVisible by remember { mutableStateOf(false) }
@@ -216,6 +223,7 @@ fun JournalScreen(
                             onCopied()
                         },
                         onEdit = { editingEntry = entry },
+                        onMove = { movingEntry = entry },
                         onEditNote = { editingNoteEntry = entry },
                         onAskDeleteEntry = { deleteEntryTarget = entry },
                         onAskPhotoActions = { photoActionTarget = entry },
@@ -231,6 +239,7 @@ fun JournalScreen(
                             onCopied()
                         },
                         onEdit = { editingEntry = entry },
+                        onMove = { movingEntry = entry },
                         onAskDeleteEntry = { deleteEntryTarget = entry },
                     )
                 }
@@ -301,6 +310,18 @@ fun JournalScreen(
         )
     }
 
+    movingEntry?.let { entry ->
+        MoveEntryDialog(
+            entry = entry,
+            entries = entries,
+            onDismiss = { movingEntry = null },
+            onMove = { targetIndex ->
+                onMoveEntry(entry.id, targetIndex)
+                movingEntry = null
+            },
+        )
+    }
+
     if (editingDirections) {
         EditDirectionsDialog(
             initialPrimary = settings.primaryDirectionLabel,
@@ -347,6 +368,7 @@ private fun CompactJournalEntryRow(
     onOpenEntry: (Long) -> Unit,
     onCopy: (String) -> Unit,
     onEdit: () -> Unit,
+    onMove: () -> Unit,
     onAskDeleteEntry: () -> Unit,
 ) {
     Card(
@@ -399,6 +421,15 @@ private fun CompactJournalEntryRow(
                     contentDescription = "Редактировать номер",
                 )
             }
+            FilledTonalIconButton(
+                onClick = onMove,
+                modifier = Modifier.size(34.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.SwapVert,
+                    contentDescription = "Переместить карточку",
+                )
+            }
         }
     }
 }
@@ -443,6 +474,7 @@ private fun JournalEntryCard(
     onOpenPhoto: (Long) -> Unit,
     onCopy: (String) -> Unit,
     onEdit: () -> Unit,
+    onMove: () -> Unit,
     onEditNote: () -> Unit,
     onAskDeleteEntry: () -> Unit,
     onAskPhotoActions: () -> Unit,
@@ -535,6 +567,15 @@ private fun JournalEntryCard(
                                 contentDescription = "Редактировать номер",
                             )
                         }
+                        FilledTonalIconButton(
+                            onClick = onMove,
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.SwapVert,
+                                contentDescription = "Переместить карточку",
+                            )
+                        }
                     }
                 }
 
@@ -562,6 +603,128 @@ private fun JournalEntryCard(
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoveEntryDialog(
+    entry: WagonEntry,
+    entries: List<WagonEntry>,
+    onDismiss: () -> Unit,
+    onMove: (Int) -> Unit,
+) {
+    val currentIndex = entries.indexOfFirst { it.id == entry.id }.coerceAtLeast(0)
+    var selectedIndex by remember(entry.id, entries.size) { mutableStateOf(currentIndex) }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = currentIndex)
+    val previewText = remember(entry.id, entries, selectedIndex) {
+        buildMovePreview(entries, entry.id, selectedIndex)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Переместить карточку")
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = "Прокрутите список и выберите новую позицию карточки.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                MoveEntryWheel(
+                    entries = entries,
+                    selectedIndex = selectedIndex,
+                    listState = listState,
+                    onSelect = { selectedIndex = it },
+                )
+                AnimatedContent(targetState = previewText, label = "move_preview") { text ->
+                    Text(
+                        text = text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onMove(selectedIndex) },
+                enabled = selectedIndex != currentIndex,
+            ) {
+                Text("Переместить")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Отмена")
+            }
+        },
+    )
+}
+
+@Composable
+private fun MoveEntryWheel(
+    entries: List<WagonEntry>,
+    selectedIndex: Int,
+    listState: LazyListState,
+    onSelect: (Int) -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(220.dp),
+            state = listState,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            contentPadding = PaddingValues(vertical = 10.dp, horizontal = 8.dp),
+        ) {
+            itemsIndexed(entries, key = { _, item -> item.id }) { index, item ->
+                val selected = index == selectedIndex
+                val containerColor by animateColorAsState(
+                    targetValue = if (selected) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    },
+                    label = "move_item_color",
+                )
+
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelect(index) },
+                    shape = RoundedCornerShape(16.dp),
+                    color = containerColor,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "${index + 1}.",
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        Text(
+                            text = item.primaryNumber ?: "Номер не найден",
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontFamily = FontFamily.Monospace,
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
         }
     }
@@ -959,6 +1122,42 @@ private fun buildPrimaryNumbers(
             } else {
                 "${settings.topDirectionLabel};\n$body\n${settings.bottomDirectionLabel}."
             }
+        }
+    }
+}
+
+private fun buildMovePreview(
+    entries: List<WagonEntry>,
+    entryId: Long,
+    targetIndex: Int,
+): String {
+    val currentIndex = entries.indexOfFirst { it.id == entryId }
+    if (currentIndex == -1) {
+        return "Позиция не найдена"
+    }
+    if (currentIndex == targetIndex) {
+        return "Карточка останется на текущем месте"
+    }
+
+    val reordered = entries.toMutableList()
+    val movingEntry = reordered.removeAt(currentIndex)
+    reordered.add(targetIndex.coerceIn(0, reordered.size), movingEntry)
+    val finalIndex = reordered.indexOfFirst { it.id == entryId }
+    val previous = reordered.getOrNull(finalIndex - 1)?.primaryNumber ?: "начало списка"
+    val next = reordered.getOrNull(finalIndex + 1)?.primaryNumber ?: "конец списка"
+
+    return when {
+        finalIndex == 0 && reordered.size > 1 -> {
+            "Карточка станет первой, перед ${reordered[1].primaryNumber ?: "следующей карточкой"}"
+        }
+        finalIndex == reordered.lastIndex && reordered.size > 1 -> {
+            "Карточка станет последней, после ${reordered[finalIndex - 1].primaryNumber ?: "предыдущей карточки"}"
+        }
+        reordered.size <= 1 -> {
+            "Карточка останется единственной"
+        }
+        else -> {
+            "Карточка встанет между $previous и $next"
         }
     }
 }

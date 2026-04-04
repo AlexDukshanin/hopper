@@ -44,6 +44,7 @@ class RailRepository(
 
         dao.insert(
             WagonEntry(
+                positionIndex = (dao.getMaxPositionIndex() ?: -1L) + 1L,
                 createdAt = System.currentTimeMillis(),
                 imagePath = photoFile.absolutePath,
                 primaryNumber = extracted.primaryNumber,
@@ -60,6 +61,20 @@ class RailRepository(
 
     suspend fun updatePrimaryNumber(id: Long, number: String) = withContext(Dispatchers.IO) {
         dao.updatePrimaryNumber(id, number.filter(Char::isDigit).take(12).ifBlank { null })
+    }
+
+    suspend fun moveEntry(
+        entryId: Long,
+        targetIndex: Int,
+    ) = withContext(Dispatchers.IO) {
+        val ordered = dao.getEntriesOrdered().toMutableList()
+        val currentIndex = ordered.indexOfFirst { it.id == entryId }
+        if (currentIndex == -1) return@withContext
+
+        val movingEntry = ordered.removeAt(currentIndex)
+        val boundedTargetIndex = targetIndex.coerceIn(0, ordered.size)
+        ordered.add(boundedTargetIndex, movingEntry)
+        dao.replaceOrder(ordered)
     }
 
     suspend fun replacePhoto(entryId: Long, newPhotoFile: File) = withContext(Dispatchers.IO) {
