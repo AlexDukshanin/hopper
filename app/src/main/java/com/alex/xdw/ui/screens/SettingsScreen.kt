@@ -80,15 +80,15 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.titleMedium,
                     )
                     ThemeOptionCard(
-                        title = "Светлая основная",
-                        subtitle = "Чистая светлая подача в духе Apple",
+                        title = "Vercel",
+                        subtitle = "Минималистичная светлая тема с графитовым акцентом",
                         swatches = listOf(
-                            Color(0xFFF5F5F7),
+                            Color(0xFFF8F8F8),
                             Color(0xFFFFFFFF),
-                            Color(0xFF0071E3),
+                            Color(0xFF111111),
                         ),
-                        selected = settings.themeMode == AppThemeMode.AppleLight,
-                        onClick = { onSelectTheme(AppThemeMode.AppleLight) },
+                        selected = settings.themeMode == AppThemeMode.VercelStyle,
+                        onClick = { onSelectTheme(AppThemeMode.VercelStyle) },
                     )
                     ThemeOptionCard(
                         title = "Темная Supabase",
@@ -102,26 +102,15 @@ fun SettingsScreen(
                         onClick = { onSelectTheme(AppThemeMode.SupabaseDark) },
                     )
                     ThemeOptionCard(
-                        title = "Airtable light",
-                        subtitle = "Светлая рабочая сетка с синими акцентами",
+                        title = "Stripe",
+                        subtitle = "Чистая светлая тема с фиолетово-синим акцентом",
                         swatches = listOf(
                             Color(0xFFF7F9FC),
                             Color(0xFFFFFFFF),
-                            Color(0xFF2D7FF9),
+                            Color(0xFF635BFF),
                         ),
-                        selected = settings.themeMode == AppThemeMode.AirtableLight,
-                        onClick = { onSelectTheme(AppThemeMode.AirtableLight) },
-                    )
-                    ThemeOptionCard(
-                        title = "Figma light",
-                        subtitle = "Чистая светлая тема с графичным акцентом",
-                        swatches = listOf(
-                            Color(0xFFF8F9FB),
-                            Color(0xFFFFFFFF),
-                            Color(0xFF7B61FF),
-                        ),
-                        selected = settings.themeMode == AppThemeMode.FigmaLight,
-                        onClick = { onSelectTheme(AppThemeMode.FigmaLight) },
+                        selected = settings.themeMode == AppThemeMode.StripeStyle,
+                        onClick = { onSelectTheme(AppThemeMode.StripeStyle) },
                     )
                     ThemeOptionCard(
                         title = "Airbnb стиль",

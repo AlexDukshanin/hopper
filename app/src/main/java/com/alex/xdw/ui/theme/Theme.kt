@@ -7,26 +7,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import com.alex.xdw.settings.AppThemeMode
 
-private val AppleLightColors = lightColorScheme(
-    primary = AppleBlue,
+private val VercelColors = lightColorScheme(
+    primary = VercelBlack,
     onPrimary = Color.White,
-    primaryContainer = AppleBlueSoft,
-    onPrimaryContainer = AppleTextPrimary,
-    secondary = Color(0xFF111111),
+    primaryContainer = VercelSurfaceRaised,
+    onPrimaryContainer = VercelTextPrimary,
+    secondary = VercelGraphite,
     onSecondary = Color.White,
-    secondaryContainer = AppleSurfaceRaised,
-    onSecondaryContainer = AppleTextPrimary,
-    tertiary = Color(0xFF5E5CE6),
+    secondaryContainer = VercelSurfaceRaised,
+    onSecondaryContainer = VercelTextPrimary,
+    tertiary = VercelBlack,
     onTertiary = Color.White,
-    error = AppleDanger,
+    error = AppDanger,
     onError = Color.White,
-    background = AppleBackground,
-    onBackground = AppleTextPrimary,
-    surface = AppleSurface,
-    onSurface = AppleTextPrimary,
-    surfaceContainerHigh = AppleSurfaceRaised,
-    onSurfaceVariant = AppleTextSecondary,
-    outline = AppleOutline,
+    background = VercelBackground,
+    onBackground = VercelTextPrimary,
+    surface = VercelSurface,
+    onSurface = VercelTextPrimary,
+    surfaceContainerHigh = VercelSurfaceRaised,
+    onSurfaceVariant = VercelTextSecondary,
+    outline = VercelOutline,
 )
 
 private val SupabaseDarkColors = darkColorScheme(
@@ -51,48 +51,26 @@ private val SupabaseDarkColors = darkColorScheme(
     outline = SupabaseOutline,
 )
 
-private val AirtableLightColors = lightColorScheme(
-    primary = AirtableBlue,
+private val StripeColors = lightColorScheme(
+    primary = StripeIndigo,
     onPrimary = Color.White,
-    primaryContainer = AirtableCyan,
-    onPrimaryContainer = AirtableTextPrimary,
-    secondary = Color(0xFF334155),
+    primaryContainer = StripeLavender,
+    onPrimaryContainer = StripeTextPrimary,
+    secondary = Color(0xFF0A2540),
     onSecondary = Color.White,
-    secondaryContainer = AirtableSurfaceRaised,
-    onSecondaryContainer = AirtableTextPrimary,
-    tertiary = Color(0xFF00A6C7),
-    onTertiary = Color.White,
-    error = AppleDanger,
+    secondaryContainer = StripeSurfaceRaised,
+    onSecondaryContainer = StripeTextPrimary,
+    tertiary = Color(0xFF00D4FF),
+    onTertiary = Color(0xFF06172E),
+    error = AppDanger,
     onError = Color.White,
-    background = AirtableBackground,
-    onBackground = AirtableTextPrimary,
-    surface = AirtableSurface,
-    onSurface = AirtableTextPrimary,
-    surfaceContainerHigh = AirtableSurfaceRaised,
-    onSurfaceVariant = AirtableTextSecondary,
-    outline = AirtableOutline,
-)
-
-private val FigmaLightColors = lightColorScheme(
-    primary = FigmaPurple,
-    onPrimary = Color.White,
-    primaryContainer = FigmaMint,
-    onPrimaryContainer = FigmaTextPrimary,
-    secondary = Color(0xFF111827),
-    onSecondary = Color.White,
-    secondaryContainer = FigmaSurfaceRaised,
-    onSecondaryContainer = FigmaTextPrimary,
-    tertiary = Color(0xFF18A0FB),
-    onTertiary = Color.White,
-    error = AppleDanger,
-    onError = Color.White,
-    background = FigmaBackground,
-    onBackground = FigmaTextPrimary,
-    surface = FigmaSurface,
-    onSurface = FigmaTextPrimary,
-    surfaceContainerHigh = FigmaSurfaceRaised,
-    onSurfaceVariant = FigmaTextSecondary,
-    outline = FigmaOutline,
+    background = StripeBackground,
+    onBackground = StripeTextPrimary,
+    surface = StripeSurface,
+    onSurface = StripeTextPrimary,
+    surfaceContainerHigh = StripeSurfaceRaised,
+    onSurfaceVariant = StripeTextSecondary,
+    outline = StripeOutline,
 )
 
 private val AirbnbColors = lightColorScheme(
@@ -106,7 +84,7 @@ private val AirbnbColors = lightColorScheme(
     onSecondaryContainer = AirbnbTextPrimary,
     tertiary = Color(0xFFFF385C),
     onTertiary = Color.White,
-    error = AppleDanger,
+    error = AppDanger,
     onError = Color.White,
     background = AirbnbBackground,
     onBackground = AirbnbTextPrimary,
@@ -128,7 +106,7 @@ private val HybridCleanColors = lightColorScheme(
     onSecondaryContainer = HybridTextPrimary,
     tertiary = HybridGreen,
     onTertiary = Color.White,
-    error = AppleDanger,
+    error = AppDanger,
     onError = Color.White,
     background = HybridBackground,
     onBackground = HybridTextPrimary,
@@ -141,15 +119,14 @@ private val HybridCleanColors = lightColorScheme(
 
 @Composable
 fun XdwTheme(
-    themeMode: AppThemeMode = AppThemeMode.AppleLight,
+    themeMode: AppThemeMode = AppThemeMode.VercelStyle,
     content: @Composable () -> Unit,
 ) {
     MaterialTheme(
         colorScheme = when (themeMode) {
-            AppThemeMode.AppleLight -> AppleLightColors
+            AppThemeMode.VercelStyle -> VercelColors
             AppThemeMode.SupabaseDark -> SupabaseDarkColors
-            AppThemeMode.AirtableLight -> AirtableLightColors
-            AppThemeMode.FigmaLight -> FigmaLightColors
+            AppThemeMode.StripeStyle -> StripeColors
             AppThemeMode.AirbnbStyle -> AirbnbColors
             AppThemeMode.HybridClean -> HybridCleanColors
         },

@@ -7,10 +7,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlin.math.roundToInt
 
 enum class AppThemeMode {
-    AppleLight,
+    VercelStyle,
     SupabaseDark,
-    AirtableLight,
-    FigmaLight,
+    StripeStyle,
     AirbnbStyle,
     HybridClean,
 }
@@ -21,7 +20,7 @@ enum class NewEntryPosition {
 }
 
 data class AppSettings(
-    val themeMode: AppThemeMode = AppThemeMode.AppleLight,
+    val themeMode: AppThemeMode = AppThemeMode.VercelStyle,
     val numberFontSizeSp: Float = 20f,
     val primaryDirectionLabel: String = "ЗАПАД",
     val secondaryDirectionLabel: String = "ВОСТОК",
@@ -107,11 +106,20 @@ class UserSettingsRepository(
     }
 
     private fun loadSettings(): AppSettings {
-        val themeMode = preferences.getString(KEY_THEME_MODE, AppThemeMode.AppleLight.name)
-            ?.let { stored ->
-                AppThemeMode.entries.firstOrNull { it.name == stored }
-            }
-            ?: AppThemeMode.AppleLight
+        val themeMode = when (preferences.getString(KEY_THEME_MODE, AppThemeMode.VercelStyle.name)) {
+            AppThemeMode.VercelStyle.name,
+            "AppleLight",
+            "AirtableLight",
+            "FigmaLight",
+            null,
+            -> AppThemeMode.VercelStyle
+
+            AppThemeMode.SupabaseDark.name -> AppThemeMode.SupabaseDark
+            AppThemeMode.StripeStyle.name -> AppThemeMode.StripeStyle
+            AppThemeMode.AirbnbStyle.name -> AppThemeMode.AirbnbStyle
+            AppThemeMode.HybridClean.name -> AppThemeMode.HybridClean
+            else -> AppThemeMode.VercelStyle
+        }
 
         val newEntryPosition = preferences.getString(KEY_NEW_ENTRY_POSITION, NewEntryPosition.Last.name)
             ?.let { stored ->
