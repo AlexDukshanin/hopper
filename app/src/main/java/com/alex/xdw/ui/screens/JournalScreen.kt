@@ -1,5 +1,7 @@
 package com.alex.xdw.ui.screens
 
+import android.content.Context
+import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +26,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -49,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -80,6 +84,7 @@ fun JournalScreen(
     onCopied: () -> Unit,
 ) {
     val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
     val rowNumbers = buildPrimaryNumbers(entries, settings, CopyListFormat.Row)
     val columnNumbers = buildPrimaryNumbers(entries, settings, CopyListFormat.Column)
     var editingEntry by remember { mutableStateOf<WagonEntry?>(null) }
@@ -88,6 +93,7 @@ fun JournalScreen(
     var photoActionTarget by remember { mutableStateOf<WagonEntry?>(null) }
     var editingDirections by remember { mutableStateOf(false) }
     var copyListDialogVisible by remember { mutableStateOf(false) }
+    var sendListDialogVisible by remember { mutableStateOf(false) }
     var journalDescriptionDraft by rememberSaveable(settings.journalDescription) {
         mutableStateOf(settings.journalDescription)
     }
@@ -113,16 +119,34 @@ fun JournalScreen(
                         text = "Журнал вагонов",
                         style = MaterialTheme.typography.headlineSmall,
                     )
-                    FilledTonalButton(
-                        onClick = { copyListDialogVisible = true },
-                        enabled = rowNumbers.isNotBlank(),
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.ContentCopy,
-                            contentDescription = null,
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Копировать список")
+                        FilledTonalButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = { copyListDialogVisible = true },
+                            enabled = rowNumbers.isNotBlank(),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.ContentCopy,
+                                contentDescription = null,
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Копировать список")
+                        }
+                        FilledTonalButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = { sendListDialogVisible = true },
+                            enabled = rowNumbers.isNotBlank(),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Share,
+                                contentDescription = null,
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Отправить")
+                        }
                     }
                     OutlinedTextField(
                         modifier = Modifier.fillMaxWidth(),
@@ -222,17 +246,35 @@ fun JournalScreen(
     }
 
     if (copyListDialogVisible) {
-        CopyListDialog(
+        ListFormatDialog(
+            title = "Как скопировать список?",
+            subtitle = "Выберите формат: строка или столбец.",
             onDismiss = { copyListDialogVisible = false },
-            onCopyRow = {
+            onRow = {
                 clipboardManager.setText(AnnotatedString(rowNumbers))
                 onCopied()
                 copyListDialogVisible = false
             },
-            onCopyColumn = {
+            onColumn = {
                 clipboardManager.setText(AnnotatedString(columnNumbers))
                 onCopied()
                 copyListDialogVisible = false
+            },
+        )
+    }
+
+    if (sendListDialogVisible) {
+        ListFormatDialog(
+            title = "Как отправить список?",
+            subtitle = "Выберите формат и откроется системное окно отправки.",
+            onDismiss = { sendListDialogVisible = false },
+            onRow = {
+                shareTextList(context, rowNumbers)
+                sendListDialogVisible = false
+            },
+            onColumn = {
+                shareTextList(context, columnNumbers)
+                sendListDialogVisible = false
             },
         )
     }
@@ -632,21 +674,23 @@ private fun PhotoThumb(
 }
 
 @Composable
-private fun CopyListDialog(
+private fun ListFormatDialog(
+    title: String,
+    subtitle: String,
     onDismiss: () -> Unit,
-    onCopyRow: () -> Unit,
-    onCopyColumn: () -> Unit,
+    onRow: () -> Unit,
+    onColumn: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text("Как скопировать список?")
+            Text(title)
         },
         text = {
-            Text("Выберите формат: строка или столбец.")
+            Text(subtitle)
         },
         confirmButton = {
-            TextButton(onClick = onCopyRow) {
+            TextButton(onClick = onRow) {
                 Text("Строка")
             }
         },
@@ -655,7 +699,7 @@ private fun CopyListDialog(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onCopyColumn) {
+                TextButton(onClick = onColumn) {
                     Text("Столбец")
                 }
                 TextButton(onClick = onDismiss) {
@@ -664,6 +708,21 @@ private fun CopyListDialog(
             }
         },
     )
+}
+
+private fun shareTextList(
+    context: Context,
+    text: String,
+) {
+    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, "HOPPER")
+        putExtra(Intent.EXTRA_TEXT, text)
+    }
+    val chooserIntent = Intent.createChooser(sendIntent, "Отправить список").apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    context.startActivity(chooserIntent)
 }
 
 @Composable
