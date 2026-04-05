@@ -43,6 +43,7 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -83,6 +84,7 @@ fun JournalScreen(
     onOpenEntry: (Long) -> Unit,
     onOpenPhoto: (Long) -> Unit,
     onUpdateNumber: (Long, String) -> Unit,
+    onUpdateLoadState: (Long, Boolean) -> Unit,
     onDeleteEntry: (WagonEntry) -> Unit,
     onDeletePhoto: (Long) -> Unit,
     onReplacePhoto: (Long) -> Unit,
@@ -114,6 +116,8 @@ fun JournalScreen(
     val context = LocalContext.current
     val rowNumbers = buildPrimaryNumbers(entries, settings, CopyListFormat.Row)
     val columnNumbers = buildPrimaryNumbers(entries, settings, CopyListFormat.Column)
+    val emptyCount = remember(entries) { entries.count { !it.isLoaded } }
+    val loadedCount = remember(entries) { entries.count(WagonEntry::isLoaded) }
     var editingEntry by remember { mutableStateOf<WagonEntry?>(null) }
     var editingNoteEntry by remember { mutableStateOf<WagonEntry?>(null) }
     var deleteEntryTarget by remember { mutableStateOf<WagonEntry?>(null) }
@@ -272,6 +276,7 @@ fun JournalScreen(
                         },
                         onEdit = { editingEntry = entry },
                         onMove = { movingEntry = entry },
+                        onToggleLoadState = { onUpdateLoadState(entry.id, !entry.isLoaded) },
                         onEditNote = { editingNoteEntry = entry },
                         onAskDeleteEntry = { deleteEntryTarget = entry },
                         onAskPhotoActions = { photoActionTarget = entry },
@@ -288,6 +293,7 @@ fun JournalScreen(
                         },
                         onEdit = { editingEntry = entry },
                         onMove = { movingEntry = entry },
+                        onToggleLoadState = { onUpdateLoadState(entry.id, !entry.isLoaded) },
                         onAskDeleteEntry = { deleteEntryTarget = entry },
                     )
                 }
@@ -297,6 +303,13 @@ fun JournalScreen(
                 BottomDirectionButton(
                     label = settings.bottomDirectionLabel,
                     onToggleDirection = onToggleDirection,
+                )
+            }
+
+            item {
+                LoadStateSummary(
+                    emptyCount = emptyCount,
+                    loadedCount = loadedCount,
                 )
             }
         }
@@ -408,6 +421,9 @@ fun JournalScreen(
     }
 }
 
+private val EmptyStateBlue = Color(0xFF2563EB)
+private val LoadedStateGreen = Color(0xFF16A34A)
+
 @Composable
 private fun CompactJournalEntryRow(
     order: Int,
@@ -417,6 +433,7 @@ private fun CompactJournalEntryRow(
     onCopy: (String) -> Unit,
     onEdit: () -> Unit,
     onMove: () -> Unit,
+    onToggleLoadState: () -> Unit,
     onAskDeleteEntry: () -> Unit,
 ) {
     Card(
@@ -478,6 +495,11 @@ private fun CompactJournalEntryRow(
                     contentDescription = "Переместить карточку",
                 )
             }
+            LoadStateToggleButton(
+                isLoaded = entry.isLoaded,
+                onClick = onToggleLoadState,
+                modifier = Modifier.size(34.dp),
+            )
         }
     }
 }
@@ -523,6 +545,7 @@ private fun JournalEntryCard(
     onCopy: (String) -> Unit,
     onEdit: () -> Unit,
     onMove: () -> Unit,
+    onToggleLoadState: () -> Unit,
     onEditNote: () -> Unit,
     onAskDeleteEntry: () -> Unit,
     onAskPhotoActions: () -> Unit,
@@ -624,6 +647,11 @@ private fun JournalEntryCard(
                                 contentDescription = "Переместить карточку",
                             )
                         }
+                        LoadStateToggleButton(
+                            isLoaded = entry.isLoaded,
+                            onClick = onToggleLoadState,
+                            modifier = Modifier.size(36.dp),
+                        )
                     }
                 }
 
@@ -653,6 +681,53 @@ private fun JournalEntryCard(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun LoadStateToggleButton(
+    isLoaded: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FilledTonalIconButton(
+        onClick = onClick,
+        modifier = modifier,
+        colors = IconButtonDefaults.filledTonalIconButtonColors(
+            containerColor = if (isLoaded) LoadedStateGreen else EmptyStateBlue,
+            contentColor = Color.White,
+        ),
+    ) {
+        Text(
+            text = if (isLoaded) "ГР" else "ПР",
+            style = MaterialTheme.typography.labelMedium,
+            color = Color.White,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun LoadStateSummary(
+    emptyCount: Int,
+    loadedCount: Int,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = "Порожних: $emptyCount",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = "Груженых: $loadedCount",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

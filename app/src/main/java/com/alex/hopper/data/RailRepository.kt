@@ -110,6 +110,7 @@ class RailRepository(
                 candidateNumbers = extracted.allNumbers,
                 recognizedText = recognition.fullText,
                 note = "",
+                isLoaded = false,
             ),
         )
     }
@@ -120,6 +121,10 @@ class RailRepository(
 
     suspend fun updatePrimaryNumber(id: Long, number: String) = withContext(Dispatchers.IO) {
         wagonEntryDao.updatePrimaryNumber(id, number.filter(Char::isDigit).take(12).ifBlank { null })
+    }
+
+    suspend fun updateLoadState(id: Long, isLoaded: Boolean) = withContext(Dispatchers.IO) {
+        wagonEntryDao.updateLoadState(id, isLoaded)
     }
 
     suspend fun moveEntry(

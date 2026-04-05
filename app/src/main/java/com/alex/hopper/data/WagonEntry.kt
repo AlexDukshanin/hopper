@@ -19,4 +19,5 @@ data class WagonEntry(
     val candidateNumbers: List<String>,
     val recognizedText: String,
     val note: String,
+    val isLoaded: Boolean,
 )

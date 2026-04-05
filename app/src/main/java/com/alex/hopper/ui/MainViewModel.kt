@@ -223,6 +223,15 @@ class MainViewModel(
         }
     }
 
+    fun updateLoadState(
+        id: Long,
+        isLoaded: Boolean,
+    ) {
+        viewModelScope.launch {
+            repository.updateLoadState(id, isLoaded)
+        }
+    }
+
     fun moveEntry(
         entryId: Long,
         targetIndex: Int,

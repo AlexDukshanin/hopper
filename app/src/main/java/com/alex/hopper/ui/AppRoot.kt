@@ -270,6 +270,7 @@ fun XdwApp(
                     onOpenEntry = { navController.navigate(AppRoute.Detail.createRoute(it)) },
                     onOpenPhoto = { navController.navigate(AppRoute.Photo.createRoute(it)) },
                     onUpdateNumber = viewModel::updatePrimaryNumber,
+                    onUpdateLoadState = viewModel::updateLoadState,
                     onDeleteEntry = { viewModel.requestDelete(it, popBack = false) },
                     onDeletePhoto = viewModel::deletePhoto,
                     onReplacePhoto = { navController.navigate(AppRoute.ReplacePhoto.createRoute(it)) },
