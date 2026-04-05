@@ -95,6 +95,7 @@ fun JournalScreen(
     onTogglePhotoVisibility: (Boolean) -> Unit,
     onMoveEntry: (Long, Int) -> Unit,
     onCopied: () -> Unit,
+    onShareCollectionFile: (Boolean) -> Unit,
 ) {
     val activeCollection = collection
     if (activeCollection == null) {
@@ -334,16 +335,22 @@ fun JournalScreen(
     }
 
     if (sendListDialogVisible) {
-        ListFormatDialog(
-            title = "Как отправить список?",
-            subtitle = "Выберите формат и откроется системное окно отправки.",
+        SendJournalDialog(
             onDismiss = { sendListDialogVisible = false },
-            onRow = {
+            onSendTextRow = {
                 shareTextList(context, rowNumbers)
                 sendListDialogVisible = false
             },
-            onColumn = {
+            onSendTextColumn = {
                 shareTextList(context, columnNumbers)
+                sendListDialogVisible = false
+            },
+            onSendFileWithoutPhotos = {
+                onShareCollectionFile(false)
+                sendListDialogVisible = false
+            },
+            onSendFileWithPhotos = {
+                onShareCollectionFile(true)
                 sendListDialogVisible = false
             },
         )
@@ -1103,6 +1110,63 @@ private fun ListFormatDialog(
                 TextButton(onClick = onDismiss) {
                     Text("Отмена")
                 }
+            }
+        },
+    )
+}
+
+@Composable
+private fun SendJournalDialog(
+    onDismiss: () -> Unit,
+    onSendTextRow: () -> Unit,
+    onSendTextColumn: () -> Unit,
+    onSendFileWithoutPhotos: () -> Unit,
+    onSendFileWithPhotos: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Как отправить журнал?")
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = "Можно отправить обычный текст или файл Hopper для полного переноса подборки.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                FilledTonalButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onSendTextRow,
+                ) {
+                    Text("Текст строкой")
+                }
+                FilledTonalButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onSendTextColumn,
+                ) {
+                    Text("Текст столбцом")
+                }
+                FilledTonalButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onSendFileWithoutPhotos,
+                ) {
+                    Text("Файл Hopper без фото")
+                }
+                FilledTonalButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onSendFileWithPhotos,
+                ) {
+                    Text("Файл Hopper с фото")
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Отмена")
             }
         },
     )

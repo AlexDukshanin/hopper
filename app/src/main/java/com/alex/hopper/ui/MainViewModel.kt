@@ -1,6 +1,7 @@
 package com.alex.hopper.ui
 
 import android.graphics.Bitmap
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -8,6 +9,7 @@ import com.alex.hopper.data.CollectionSummary
 import com.alex.hopper.data.RailRepository
 import com.alex.hopper.data.WagonCollection
 import com.alex.hopper.data.WagonEntry
+import com.alex.hopper.exchange.CollectionExchangeManager
 import com.alex.hopper.settings.AppIconManager
 import com.alex.hopper.settings.AppIconMode
 import com.alex.hopper.settings.AppSettings
@@ -39,6 +41,15 @@ data class CameraUiState(
 
 sealed interface AppEvent {
     data class OpenEntry(val entryId: Long) : AppEvent
+    data class OpenCollection(
+        val collectionId: Long,
+        val message: String,
+    ) : AppEvent
+    data class ShareFile(
+        val uri: Uri,
+        val mimeType: String,
+        val chooserTitle: String,
+    ) : AppEvent
     data class Snackbar(
         val message: String,
         val durationMillis: Long = 2_000,
@@ -55,6 +66,7 @@ class MainViewModel(
     private val repository: RailRepository,
     private val settingsRepository: UserSettingsRepository,
     private val appIconManager: AppIconManager,
+    private val collectionExchangeManager: CollectionExchangeManager,
 ) : ViewModel() {
     private val pendingDeleteEntry = MutableStateFlow<WagonEntry?>(null)
     private val _selectedCollectionId = MutableStateFlow<Long?>(null)
@@ -370,6 +382,62 @@ class MainViewModel(
         showSnackbar("Качество фото обновлено", durationMillis = 1_000)
     }
 
+    fun shareCollectionFile(
+        collectionId: Long,
+        includePhotos: Boolean,
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                collectionExchangeManager.createShareFile(
+                    collectionId = collectionId,
+                    includePhotos = includePhotos,
+                )
+            }.onSuccess { sharedFile ->
+                _events.emit(
+                    AppEvent.ShareFile(
+                        uri = sharedFile.uri,
+                        mimeType = sharedFile.mimeType,
+                        chooserTitle = if (includePhotos) {
+                            "Отправить подборку с фото"
+                        } else {
+                            "Отправить подборку без фото"
+                        },
+                    ),
+                )
+            }.onFailure { exception ->
+                _events.emit(
+                    AppEvent.Snackbar(
+                        message = exception.message ?: "Не удалось подготовить файл подборки",
+                        durationMillis = 1_600,
+                    ),
+                )
+            }
+        }
+    }
+
+    fun importCollectionFromUri(uri: Uri) {
+        viewModelScope.launch {
+            runCatching { collectionExchangeManager.importFromUri(uri) }
+                .onSuccess { result ->
+                    _selectedCollectionId.value = result.collectionId
+                    _events.emit(
+                        AppEvent.OpenCollection(
+                            collectionId = result.collectionId,
+                            message = "Подборка \"${result.collectionName}\" импортирована",
+                        ),
+                    )
+                }
+                .onFailure { exception ->
+                    _events.emit(
+                        AppEvent.Snackbar(
+                            message = exception.message ?: "Не удалось импортировать подборку",
+                            durationMillis = 1_800,
+                        ),
+                    )
+                }
+        }
+    }
+
     fun requestDelete(entry: WagonEntry, popBack: Boolean) {
         viewModelScope.launch {
             val previousPending = pendingDeleteEntry.value
@@ -405,11 +473,17 @@ class MainViewModel(
         private val repository: RailRepository,
         private val settingsRepository: UserSettingsRepository,
         private val appIconManager: AppIconManager,
+        private val collectionExchangeManager: CollectionExchangeManager,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(MainViewModel::class.java)) {
-                return MainViewModel(repository, settingsRepository, appIconManager) as T
+                return MainViewModel(
+                    repository,
+                    settingsRepository,
+                    appIconManager,
+                    collectionExchangeManager,
+                ) as T
             }
             error("Unknown ViewModel class: ${modelClass.name}")
         }

@@ -1,5 +1,7 @@
 package com.alex.hopper.ui
 
+import android.content.ClipData
+import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,6 +31,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -59,6 +62,7 @@ fun XdwApp(
     viewModel: MainViewModel,
     settings: AppSettings,
 ) {
+    val context = LocalContext.current
     val navController = rememberNavController()
     val snackbarHostState = remember { SnackbarHostState() }
     val collections by viewModel.collections.collectAsStateWithLifecycle()
@@ -104,6 +108,35 @@ fun XdwApp(
             when (event) {
                 is AppEvent.OpenEntry -> {
                     navController.navigate(AppRoute.Detail.createRoute(event.entryId))
+                }
+
+                is AppEvent.OpenCollection -> {
+                    settingsSource = SettingsSource.Journal
+                    navController.navigate(AppRoute.Journal.createRoute(event.collectionId)) {
+                        popUpTo(AppRoute.Collections.route) {
+                            inclusive = false
+                        }
+                        launchSingleTop = true
+                    }
+                    snackbarHostState.showSnackbar(event.message)
+                }
+
+                is AppEvent.ShareFile -> {
+                    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = event.mimeType
+                        putExtra(Intent.EXTRA_STREAM, event.uri)
+                        clipData = ClipData.newUri(
+                            context.contentResolver,
+                            event.chooserTitle,
+                            event.uri,
+                        )
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(
+                        Intent.createChooser(sendIntent, event.chooserTitle).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        },
+                    )
                 }
 
                 is AppEvent.PhotoUpdated -> {
@@ -313,6 +346,9 @@ fun XdwApp(
                     onTogglePhotoVisibility = viewModel::setShowPhotosInJournal,
                     onMoveEntry = viewModel::moveEntry,
                     onCopied = { viewModel.showSnackbar("Скопировано", durationMillis = 1_000) },
+                    onShareCollectionFile = { includePhotos ->
+                        viewModel.shareCollectionFile(collectionId, includePhotos)
+                    },
                 )
             }
 

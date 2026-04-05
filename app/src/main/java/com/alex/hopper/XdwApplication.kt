@@ -7,6 +7,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.alex.hopper.data.AppDatabase
 import com.alex.hopper.data.RailRepository
+import com.alex.hopper.exchange.CollectionExchangeManager
 import com.alex.hopper.ocr.OcrEngine
 import com.alex.hopper.ocr.WagonNumberExtractor
 import com.alex.hopper.settings.AppIconManager
@@ -35,6 +36,11 @@ class AppContainer(context: Context) {
         collectionDao = database.collectionDao(),
         ocrEngine = ocrEngine,
         extractor = extractor,
+        photoStorage = photoStorage,
+    )
+    val collectionExchangeManager = CollectionExchangeManager(
+        context = context,
+        repository = repository,
         photoStorage = photoStorage,
     )
 

@@ -10,6 +10,22 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
+data class CollectionSnapshot(
+    val collection: WagonCollection,
+    val entries: List<WagonEntry>,
+)
+
+data class ImportedCollectionEntry(
+    val positionIndex: Long,
+    val createdAt: Long,
+    val imagePath: String,
+    val primaryNumber: String?,
+    val candidateNumbers: List<String>,
+    val recognizedText: String,
+    val note: String,
+    val isLoaded: Boolean,
+)
+
 class RailRepository(
     private val wagonEntryDao: WagonEntryDao,
     private val collectionDao: CollectionDao,
@@ -39,6 +55,51 @@ class RailRepository(
                 createdAt = System.currentTimeMillis(),
             ),
         )
+    }
+
+    suspend fun getCollectionSnapshot(collectionId: Long): CollectionSnapshot? = withContext(Dispatchers.IO) {
+        val collection = collectionDao.getCollectionById(collectionId) ?: return@withContext null
+        CollectionSnapshot(
+            collection = collection,
+            entries = wagonEntryDao.getEntriesOrdered(collectionId),
+        )
+    }
+
+    suspend fun importTransferredCollection(
+        name: String,
+        description: String,
+        entries: List<ImportedCollectionEntry>,
+    ): Long = withContext(Dispatchers.IO) {
+        val collectionId = collectionDao.insert(
+            WagonCollection(
+                name = name.trim().ifBlank { "Подборка" },
+                description = description.trim(),
+                createdAt = System.currentTimeMillis(),
+            ),
+        )
+
+        try {
+            entries.sortedBy(ImportedCollectionEntry::positionIndex).forEachIndexed { index, entry ->
+                wagonEntryDao.insert(
+                    WagonEntry(
+                        collectionId = collectionId,
+                        positionIndex = index.toLong(),
+                        createdAt = entry.createdAt,
+                        imagePath = entry.imagePath,
+                        primaryNumber = entry.primaryNumber,
+                        candidateNumbers = entry.candidateNumbers,
+                        recognizedText = entry.recognizedText,
+                        note = entry.note,
+                        isLoaded = entry.isLoaded,
+                    ),
+                )
+            }
+            collectionId
+        } catch (exception: Exception) {
+            wagonEntryDao.deleteByCollectionId(collectionId)
+            collectionDao.deleteById(collectionId)
+            throw exception
+        }
     }
 
     suspend fun renameCollection(
