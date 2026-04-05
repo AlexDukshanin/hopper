@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.alex.xdw"
+    namespace = "com.alex.hopper"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.alex.xdw"
+        applicationId = "com.alex.hopper"
         minSdk = 23
         targetSdk = 36
         versionCode = 1

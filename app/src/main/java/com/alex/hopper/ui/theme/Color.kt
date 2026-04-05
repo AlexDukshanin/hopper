@@ -1,0 +1,51 @@
+package com.alex.hopper.ui.theme
+
+import androidx.compose.ui.graphics.Color
+
+val AppDanger = Color(0xFFD83A3A)
+
+val VercelBlack = Color(0xFF111111)
+val VercelGraphite = Color(0xFF2A2A2A)
+val VercelBackground = Color(0xFFF8F8F8)
+val VercelSurface = Color(0xFFFFFFFF)
+val VercelSurfaceRaised = Color(0xFFF0F0F0)
+val VercelTextPrimary = Color(0xFF111111)
+val VercelTextSecondary = Color(0xFF6B7280)
+val VercelOutline = Color(0xFFE5E7EB)
+
+val SupabaseGreen = Color(0xFF3ECF8E)
+val SupabaseGreenDeep = Color(0xFF00C573)
+val SupabaseBackground = Color(0xFF171717)
+val SupabaseSurface = Color(0xFF0F0F0F)
+val SupabaseSurfaceRaised = Color(0xFF202020)
+val SupabaseTextPrimary = Color(0xFFFAFAFA)
+val SupabaseTextSecondary = Color(0xFFB4B4B4)
+val SupabaseOutline = Color(0xFF2E2E2E)
+val SupabaseDanger = Color(0xFFE85D5D)
+
+val StripeIndigo = Color(0xFF635BFF)
+val StripeLavender = Color(0xFFECEBFF)
+val StripeBackground = Color(0xFFF7F9FC)
+val StripeSurface = Color(0xFFFFFFFF)
+val StripeSurfaceRaised = Color(0xFFF0F4FA)
+val StripeTextPrimary = Color(0xFF0A2540)
+val StripeTextSecondary = Color(0xFF4F5B76)
+val StripeOutline = Color(0xFFD5DCEC)
+
+val AirbnbCoral = Color(0xFFFF5A5F)
+val AirbnbRose = Color(0xFFFFE7EA)
+val AirbnbBackground = Color(0xFFFFF8F8)
+val AirbnbSurface = Color(0xFFFFFFFF)
+val AirbnbSurfaceRaised = Color(0xFFFFF0F1)
+val AirbnbTextPrimary = Color(0xFF222222)
+val AirbnbTextSecondary = Color(0xFF6B6B6B)
+val AirbnbOutline = Color(0xFFFFD5D9)
+
+val HybridBlue = Color(0xFF3A78F2)
+val HybridGreen = Color(0xFF1FBF92)
+val HybridBackground = Color(0xFFF4F7FB)
+val HybridSurface = Color(0xFFFFFFFF)
+val HybridSurfaceRaised = Color(0xFFEAF0F7)
+val HybridTextPrimary = Color(0xFF162033)
+val HybridTextSecondary = Color(0xFF667085)
+val HybridOutline = Color(0xFFD7E0EC)
