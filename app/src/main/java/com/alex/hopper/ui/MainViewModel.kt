@@ -381,6 +381,11 @@ class MainViewModel(
         showSnackbar("Качество фото: JPEG $quality", durationMillis = 1_000)
     }
 
+    fun setSharePhotoQualityJpeg(quality: Int) {
+        settingsRepository.setSharePhotoQualityJpeg(quality)
+        showSnackbar("Качество отправки: JPEG $quality", durationMillis = 1_000)
+    }
+
     fun shareCollectionFile(
         collectionId: Long,
         includePhotos: Boolean,
@@ -390,6 +395,7 @@ class MainViewModel(
                 collectionExchangeManager.createShareFile(
                     collectionId = collectionId,
                     includePhotos = includePhotos,
+                    jpegQuality = settings.value.sharePhotoQualityJpeg,
                 )
             }.onSuccess { sharedFile ->
                 _events.emit(

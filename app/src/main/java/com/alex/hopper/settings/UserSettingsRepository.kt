@@ -36,6 +36,7 @@ data class AppSettings(
     val showPhotosInJournal: Boolean = true,
     val collectionLayoutMode: CollectionLayoutMode = CollectionLayoutMode.Grid,
     val photoQualityJpeg: Int = 92,
+    val sharePhotoQualityJpeg: Int = 72,
 ) {
     val topDirectionLabel: String
         get() = if (isPrimaryDirectionOnTop) primaryDirectionLabel else secondaryDirectionLabel
@@ -133,6 +134,16 @@ class UserSettingsRepository(
         _settings.value = loadSettings()
     }
 
+    fun setSharePhotoQualityJpeg(quality: Int) {
+        preferences.edit()
+            .putInt(
+                KEY_SHARE_PHOTO_QUALITY_JPEG,
+                quality.coerceIn(MIN_PHOTO_QUALITY_JPEG, MAX_PHOTO_QUALITY_JPEG),
+            )
+            .apply()
+        _settings.value = loadSettings()
+    }
+
     private fun loadSettings(): AppSettings {
         val themeMode = when (preferences.getString(KEY_THEME_MODE, AppThemeMode.HybridClean.name)) {
             "VercelStyle",
@@ -180,6 +191,11 @@ class UserSettingsRepository(
             }
         }
 
+        val sharePhotoQualityJpeg = preferences.getInt(
+            KEY_SHARE_PHOTO_QUALITY_JPEG,
+            DEFAULT_SHARE_PHOTO_QUALITY_JPEG,
+        ).coerceIn(MIN_PHOTO_QUALITY_JPEG, MAX_PHOTO_QUALITY_JPEG)
+
         val numberFontSizeSp = preferences.getFloat(KEY_NUMBER_FONT_SIZE, 20f)
             .coerceIn(MIN_NUMBER_SIZE, MAX_NUMBER_SIZE)
             .roundToInt()
@@ -200,6 +216,7 @@ class UserSettingsRepository(
             showPhotosInJournal = preferences.getBoolean(KEY_SHOW_PHOTOS_IN_JOURNAL, true),
             collectionLayoutMode = collectionLayoutMode,
             photoQualityJpeg = photoQualityJpeg,
+            sharePhotoQualityJpeg = sharePhotoQualityJpeg,
         )
     }
 
@@ -218,6 +235,7 @@ class UserSettingsRepository(
         const val KEY_COLLECTION_LAYOUT_MODE = "collection_layout_mode"
         const val KEY_PHOTO_QUALITY_MODE = "photo_quality_mode"
         const val KEY_PHOTO_QUALITY_JPEG = "photo_quality_jpeg"
+        const val KEY_SHARE_PHOTO_QUALITY_JPEG = "share_photo_quality_jpeg"
 
         const val DEFAULT_PRIMARY_LABEL = "ЗАПАД"
         const val DEFAULT_SECONDARY_LABEL = "ВОСТОК"
@@ -226,5 +244,6 @@ class UserSettingsRepository(
         const val MIN_PHOTO_QUALITY_JPEG = 60
         const val MAX_PHOTO_QUALITY_JPEG = 92
         const val DEFAULT_PHOTO_QUALITY_JPEG = 92
+        const val DEFAULT_SHARE_PHOTO_QUALITY_JPEG = 72
     }
 }

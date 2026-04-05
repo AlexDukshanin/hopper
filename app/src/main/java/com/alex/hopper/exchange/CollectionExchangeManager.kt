@@ -1,6 +1,8 @@
 package com.alex.hopper.exchange
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.core.content.FileProvider
 import com.alex.hopper.data.CollectionSnapshot
@@ -39,6 +41,7 @@ class CollectionExchangeManager(
     suspend fun createShareFile(
         collectionId: Long,
         includePhotos: Boolean,
+        jpegQuality: Int,
     ): SharedCollectionFile = withContext(Dispatchers.IO) {
         val snapshot = repository.getCollectionSnapshot(collectionId)
             ?: error("Подборка для отправки не найдена")
@@ -64,7 +67,11 @@ class CollectionExchangeManager(
                     if (!photoFile.exists()) return@forEach
 
                     output.putNextEntry(ZipEntry("$PHOTOS_DIRECTORY/$photoName"))
-                    photoFile.inputStream().use { input -> input.copyTo(output) }
+                    writeCompressedPhoto(
+                        photoFile = photoFile,
+                        output = output,
+                        jpegQuality = jpegQuality,
+                    )
                     output.closeEntry()
                 }
             }
@@ -190,6 +197,28 @@ class CollectionExchangeManager(
             )
             put("entries", entriesJson)
         }.toString(2)
+    }
+
+    private fun writeCompressedPhoto(
+        photoFile: File,
+        output: ZipOutputStream,
+        jpegQuality: Int,
+    ) {
+        val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
+        if (bitmap == null) {
+            photoFile.inputStream().use { input -> input.copyTo(output) }
+            return
+        }
+
+        try {
+            bitmap.compress(
+                Bitmap.CompressFormat.JPEG,
+                jpegQuality.coerceIn(60, 92),
+                output,
+            )
+        } finally {
+            bitmap.recycle()
+        }
     }
 
     private fun parseManifest(json: String): TransferPayload {

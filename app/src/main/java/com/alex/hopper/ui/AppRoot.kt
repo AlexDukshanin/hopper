@@ -465,6 +465,7 @@ fun XdwApp(
                     onNewEntryPositionChange = viewModel::setNewEntryPosition,
                     onIncludeDirectionInCopyChange = viewModel::setIncludeDirectionInCopy,
                     onPhotoQualityChange = viewModel::setPhotoQualityJpeg,
+                    onSharePhotoQualityChange = viewModel::setSharePhotoQualityJpeg,
                 )
             }
 

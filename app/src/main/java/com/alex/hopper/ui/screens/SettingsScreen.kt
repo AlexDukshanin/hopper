@@ -52,11 +52,16 @@ fun SettingsScreen(
     onNewEntryPositionChange: (NewEntryPosition) -> Unit,
     onIncludeDirectionInCopyChange: (Boolean) -> Unit,
     onPhotoQualityChange: (Int) -> Unit,
+    onSharePhotoQualityChange: (Int) -> Unit,
 ) {
     var photoQualitySliderValue by remember(settings.photoQualityJpeg) {
         mutableFloatStateOf(settings.photoQualityJpeg.toFloat())
     }
     val currentPhotoQuality = photoQualitySliderValue.roundToInt().coerceIn(60, 92)
+    var sharePhotoQualitySliderValue by remember(settings.sharePhotoQualityJpeg) {
+        mutableFloatStateOf(settings.sharePhotoQualityJpeg.toFloat())
+    }
+    val currentSharePhotoQuality = sharePhotoQualitySliderValue.roundToInt().coerceIn(60, 92)
 
     LazyColumn(
         modifier = Modifier
@@ -95,72 +100,34 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text(
-                        text = "Чем ниже качество, тем меньше размер файла. OCR и номер вагона продолжат работать как раньше.",
+                        text = "Для съемки и отправки можно задать разное сжатие.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        ),
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(
-                                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                                ) {
-                                    Text(
-                                        text = "JPEG $currentPhotoQuality",
-                                        style = MaterialTheme.typography.titleLarge,
-                                    )
-                                    Text(
-                                        text = describePhotoQuality(currentPhotoQuality),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                Text(
-                                    text = "${estimatePhotoRange(currentPhotoQuality)} МБ",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
+                    PhotoQualitySliderCard(
+                        title = "Обычное фото",
+                        helperText = "Влияет на новые снимки в журнале. Чем ниже качество, тем меньше размер файла.",
+                        currentQuality = currentPhotoQuality,
+                        sliderValue = photoQualitySliderValue,
+                        onSliderChange = { photoQualitySliderValue = it },
+                        onSliderSave = {
+                            if (currentPhotoQuality != settings.photoQualityJpeg) {
+                                onPhotoQualityChange(currentPhotoQuality)
                             }
-                            Slider(
-                                value = photoQualitySliderValue,
-                                onValueChange = { photoQualitySliderValue = it },
-                                onValueChangeFinished = {
-                                    if (currentPhotoQuality != settings.photoQualityJpeg) {
-                                        onPhotoQualityChange(currentPhotoQuality)
-                                    }
-                                },
-                                valueRange = 60f..92f,
-                                steps = 31,
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = "Очень низкое 60",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Text(
-                                    text = "Высокое 92",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                        },
+                    )
+                    PhotoQualitySliderCard(
+                        title = "Фото при отправке",
+                        helperText = "Используется только для файла Hopper с фото. Оригиналы в журнале не меняются.",
+                        currentQuality = currentSharePhotoQuality,
+                        sliderValue = sharePhotoQualitySliderValue,
+                        onSliderChange = { sharePhotoQualitySliderValue = it },
+                        onSliderSave = {
+                            if (currentSharePhotoQuality != settings.sharePhotoQualityJpeg) {
+                                onSharePhotoQualityChange(currentSharePhotoQuality)
                             }
-                        }
-                    }
+                        },
+                    )
                 }
             }
         }
@@ -381,6 +348,74 @@ fun SettingsScreen(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhotoQualitySliderCard(
+    title: String,
+    helperText: String,
+    currentQuality: Int,
+    sliderValue: Float,
+    onSliderChange: (Float) -> Unit,
+    onSliderSave: () -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = helperText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = "JPEG $currentQuality",
+                style = MaterialTheme.typography.headlineSmall,
+            )
+            Text(
+                text = describePhotoQuality(currentQuality),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = "Оценка размера одного фото: ${estimatePhotoRange(currentQuality)} МБ",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Slider(
+                value = sliderValue,
+                onValueChange = onSliderChange,
+                onValueChangeFinished = onSliderSave,
+                valueRange = 60f..92f,
+                steps = 31,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Очень низкое 60",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = "Высокое 92",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
