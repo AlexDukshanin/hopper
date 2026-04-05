@@ -2,6 +2,8 @@ package com.alex.hopper.ui
 
 import android.content.ClipData
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ViewList
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
@@ -41,6 +44,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.alex.hopper.exchange.CollectionExchangeManager
 import com.alex.hopper.settings.AppSettings
 import com.alex.hopper.ui.screens.CameraScreen
 import com.alex.hopper.ui.screens.CollectionsScreen
@@ -64,6 +68,13 @@ fun XdwApp(
 ) {
     val context = LocalContext.current
     val navController = rememberNavController()
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            viewModel.importCollectionFromUri(uri)
+        }
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     val collections by viewModel.collections.collectAsStateWithLifecycle()
     val selectedCollectionId by viewModel.selectedCollectionId.collectAsStateWithLifecycle()
@@ -87,6 +98,7 @@ fun XdwApp(
         currentRoute == AppRoute.SearchGlobal.route ||
         currentRoute == AppRoute.SearchCollection.route ||
         showJournalActions
+    val showImportAction = currentRoute == AppRoute.Collections.route
     val showBottomBar = currentRoute == AppRoute.Collections.route ||
         currentRoute == AppRoute.Journal.route ||
         currentRoute == AppRoute.Camera.route ||
@@ -194,6 +206,7 @@ fun XdwApp(
                     canOpenCamera = bottomBarCollectionId != null,
                     showJournalActions = showJournalActions,
                     showSearchAction = showSearchAction,
+                    showImportAction = showImportAction,
                     onNavigateJournal = {
                         bottomBarCollectionId?.let { collectionId ->
                             val previousBackStackEntry = navController.previousBackStackEntry
@@ -261,6 +274,16 @@ fun XdwApp(
                                 launchSingleTop = true
                             }
                         }
+                    },
+                    onImportCollection = {
+                        importLauncher.launch(
+                            arrayOf(
+                                CollectionExchangeManager.MIME_TYPE,
+                                "application/octet-stream",
+                                "application/zip",
+                                "*/*",
+                            ),
+                        )
                     },
                 )
             }
@@ -513,10 +536,12 @@ private fun MainBottomBar(
     canOpenCamera: Boolean,
     showJournalActions: Boolean,
     showSearchAction: Boolean,
+    showImportAction: Boolean,
     onNavigateJournal: () -> Unit,
     onNavigateCamera: () -> Unit,
     onNavigateSettings: () -> Unit,
     onNavigateSearch: () -> Unit,
+    onImportCollection: () -> Unit,
 ) {
     Surface(
         tonalElevation = 8.dp,
@@ -526,7 +551,7 @@ private fun MainBottomBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 18.dp, vertical = 10.dp),
-            horizontalArrangement = if (!showJournalActions) {
+            horizontalArrangement = if (!showJournalActions && !showImportAction) {
                 Arrangement.spacedBy(16.dp, Alignment.End)
             } else {
                 Arrangement.SpaceBetween
@@ -571,6 +596,18 @@ private fun MainBottomBar(
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
+                    )
+                }
+            }
+
+            if (showImportAction) {
+                FilledTonalIconButton(
+                    onClick = onImportCollection,
+                    modifier = Modifier.size(58.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Add,
+                        contentDescription = "Открыть Hopper файл",
                     )
                 }
             }
