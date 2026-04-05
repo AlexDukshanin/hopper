@@ -9,6 +9,7 @@ import com.alex.xdw.data.AppDatabase
 import com.alex.xdw.data.RailRepository
 import com.alex.xdw.ocr.OcrEngine
 import com.alex.xdw.ocr.WagonNumberExtractor
+import com.alex.xdw.settings.AppIconManager
 import com.alex.xdw.settings.UserSettingsRepository
 import com.alex.xdw.storage.PhotoStorage
 
@@ -27,6 +28,7 @@ class AppContainer(context: Context) {
     private val ocrEngine = OcrEngine(context)
     private val extractor = WagonNumberExtractor()
     val settingsRepository = UserSettingsRepository(context)
+    val appIconManager = AppIconManager(context)
 
     val repository = RailRepository(
         dao = database.wagonEntryDao(),

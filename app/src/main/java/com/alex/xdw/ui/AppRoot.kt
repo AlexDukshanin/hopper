@@ -192,6 +192,7 @@ fun XdwApp(
                     settings = settings,
                     contentPadding = contentPadding,
                     onSelectTheme = viewModel::setThemeMode,
+                    onSelectAppIcon = viewModel::setAppIconMode,
                     onNumberSizeChange = viewModel::setNumberFontSize,
                     onNewEntryPositionChange = viewModel::setNewEntryPosition,
                     onIncludeDirectionInCopyChange = viewModel::setIncludeDirectionInCopy,

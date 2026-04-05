@@ -15,6 +15,7 @@ class MainActivity : ComponentActivity() {
         MainViewModel.Factory(
             repository = (application as XdwApplication).container.repository,
             settingsRepository = (application as XdwApplication).container.settingsRepository,
+            appIconManager = (application as XdwApplication).container.appIconManager,
         )
     }
 

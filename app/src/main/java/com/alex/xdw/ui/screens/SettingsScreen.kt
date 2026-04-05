@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.alex.xdw.settings.AppIconMode
 import com.alex.xdw.settings.AppSettings
 import com.alex.xdw.settings.AppThemeMode
 import com.alex.xdw.settings.NewEntryPosition
@@ -39,6 +40,7 @@ fun SettingsScreen(
     settings: AppSettings,
     contentPadding: PaddingValues,
     onSelectTheme: (AppThemeMode) -> Unit,
+    onSelectAppIcon: (AppIconMode) -> Unit,
     onNumberSizeChange: (Float) -> Unit,
     onNewEntryPositionChange: (NewEntryPosition) -> Unit,
     onIncludeDirectionInCopyChange: (Boolean) -> Unit,
@@ -65,6 +67,50 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+            }
+        }
+
+        item {
+            ElevatedCard {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = "Иконка приложения",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = "Выберите желтую, серую или зеленую иконку для рабочего стола.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        IconOptionCard(
+                            modifier = Modifier.weight(1f),
+                            title = "Желтая",
+                            previewColor = Color(0xFFF1C40F),
+                            selected = settings.appIconMode == AppIconMode.Yellow,
+                            onClick = { onSelectAppIcon(AppIconMode.Yellow) },
+                        )
+                        IconOptionCard(
+                            modifier = Modifier.weight(1f),
+                            title = "Серая",
+                            previewColor = Color(0xFF9CA3AF),
+                            selected = settings.appIconMode == AppIconMode.Gray,
+                            onClick = { onSelectAppIcon(AppIconMode.Gray) },
+                        )
+                        IconOptionCard(
+                            modifier = Modifier.weight(1f),
+                            title = "Зеленая",
+                            previewColor = Color(0xFF22C55E),
+                            selected = settings.appIconMode == AppIconMode.Green,
+                            onClick = { onSelectAppIcon(AppIconMode.Green) },
+                        )
+                    }
                 }
             }
         }
@@ -253,6 +299,50 @@ fun SettingsScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun IconOptionCard(
+    modifier: Modifier = Modifier,
+    title: String,
+    previewColor: Color,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = modifier,
+        onClick = onClick,
+        shape = RoundedCornerShape(22.dp),
+        border = BorderStroke(
+            width = if (selected) 2.dp else 1.dp,
+            color = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+            },
+        ),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .background(previewColor, CircleShape),
+            )
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
+            )
         }
     }
 }

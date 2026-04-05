@@ -6,6 +6,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.alex.xdw.data.RailRepository
 import com.alex.xdw.data.WagonEntry
+import com.alex.xdw.settings.AppIconManager
+import com.alex.xdw.settings.AppIconMode
 import com.alex.xdw.settings.AppSettings
 import com.alex.xdw.settings.AppThemeMode
 import com.alex.xdw.settings.NewEntryPosition
@@ -45,6 +47,7 @@ sealed interface AppEvent {
 class MainViewModel(
     private val repository: RailRepository,
     private val settingsRepository: UserSettingsRepository,
+    private val appIconManager: AppIconManager,
 ) : ViewModel() {
     private val pendingDeleteEntry = MutableStateFlow<WagonEntry?>(null)
 
@@ -67,6 +70,10 @@ class MainViewModel(
 
     private val _events = MutableSharedFlow<AppEvent>(extraBufferCapacity = 1)
     val events = _events.asSharedFlow()
+
+    init {
+        appIconManager.apply(settings.value.appIconMode)
+    }
 
     fun observeEntry(id: Long): Flow<WagonEntry?> = repository.observeEntry(id)
 
@@ -189,6 +196,12 @@ class MainViewModel(
         settingsRepository.setThemeMode(themeMode)
     }
 
+    fun setAppIconMode(appIconMode: AppIconMode) {
+        settingsRepository.setAppIconMode(appIconMode)
+        appIconManager.apply(appIconMode)
+        showSnackbar("Иконка обновлена", durationMillis = 1_000)
+    }
+
     fun setNumberFontSize(fontSizeSp: Float) {
         settingsRepository.setNumberFontSizeSp(fontSizeSp)
     }
@@ -259,11 +272,12 @@ class MainViewModel(
     class Factory(
         private val repository: RailRepository,
         private val settingsRepository: UserSettingsRepository,
+        private val appIconManager: AppIconManager,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(MainViewModel::class.java)) {
-                return MainViewModel(repository, settingsRepository) as T
+                return MainViewModel(repository, settingsRepository, appIconManager) as T
             }
             error("Unknown ViewModel class: ${modelClass.name}")
         }

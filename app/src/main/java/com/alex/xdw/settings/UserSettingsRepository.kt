@@ -21,6 +21,7 @@ enum class NewEntryPosition {
 
 data class AppSettings(
     val themeMode: AppThemeMode = AppThemeMode.VercelStyle,
+    val appIconMode: AppIconMode = AppIconMode.Yellow,
     val numberFontSizeSp: Float = 20f,
     val primaryDirectionLabel: String = "ЗАПАД",
     val secondaryDirectionLabel: String = "ВОСТОК",
@@ -48,6 +49,13 @@ class UserSettingsRepository(
     fun setThemeMode(themeMode: AppThemeMode) {
         preferences.edit()
             .putString(KEY_THEME_MODE, themeMode.name)
+            .apply()
+        _settings.value = loadSettings()
+    }
+
+    fun setAppIconMode(appIconMode: AppIconMode) {
+        preferences.edit()
+            .putString(KEY_APP_ICON_MODE, appIconMode.name)
             .apply()
         _settings.value = loadSettings()
     }
@@ -121,6 +129,12 @@ class UserSettingsRepository(
             else -> AppThemeMode.VercelStyle
         }
 
+        val appIconMode = preferences.getString(KEY_APP_ICON_MODE, AppIconMode.Yellow.name)
+            ?.let { stored ->
+                AppIconMode.entries.firstOrNull { it.name == stored }
+            }
+            ?: AppIconMode.Yellow
+
         val newEntryPosition = preferences.getString(KEY_NEW_ENTRY_POSITION, NewEntryPosition.Last.name)
             ?.let { stored ->
                 NewEntryPosition.entries.firstOrNull { it.name == stored }
@@ -134,6 +148,7 @@ class UserSettingsRepository(
 
         return AppSettings(
             themeMode = themeMode,
+            appIconMode = appIconMode,
             numberFontSizeSp = numberFontSizeSp,
             primaryDirectionLabel = preferences.getString(KEY_PRIMARY_LABEL, DEFAULT_PRIMARY_LABEL)
                 ?: DEFAULT_PRIMARY_LABEL,
@@ -150,6 +165,7 @@ class UserSettingsRepository(
     private companion object {
         const val PREFS_NAME = "xdw_preferences"
         const val KEY_THEME_MODE = "theme_mode"
+        const val KEY_APP_ICON_MODE = "app_icon_mode"
         const val KEY_NUMBER_FONT_SIZE = "number_font_size_sp"
         const val KEY_PRIMARY_LABEL = "primary_direction_label"
         const val KEY_SECONDARY_LABEL = "secondary_direction_label"
