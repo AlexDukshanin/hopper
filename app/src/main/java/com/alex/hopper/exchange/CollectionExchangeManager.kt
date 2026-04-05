@@ -3,8 +3,10 @@ package com.alex.hopper.exchange
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.net.Uri
 import androidx.core.content.FileProvider
+import androidx.exifinterface.media.ExifInterface
 import com.alex.hopper.data.CollectionSnapshot
 import com.alex.hopper.data.ImportedCollectionEntry
 import com.alex.hopper.data.RailRepository
@@ -210,15 +212,56 @@ class CollectionExchangeManager(
             return
         }
 
+        val normalizedBitmap = bitmap.applyExifOrientation(photoFile)
+
         try {
-            bitmap.compress(
+            normalizedBitmap.compress(
                 Bitmap.CompressFormat.JPEG,
                 jpegQuality.coerceIn(60, 92),
                 output,
             )
         } finally {
+            if (normalizedBitmap !== bitmap) {
+                normalizedBitmap.recycle()
+            }
             bitmap.recycle()
         }
+    }
+
+    private fun Bitmap.applyExifOrientation(photoFile: File): Bitmap {
+        val exifInterface = runCatching { ExifInterface(photoFile.absolutePath) }.getOrNull() ?: return this
+        val orientation = exifInterface.getAttributeInt(
+            ExifInterface.TAG_ORIENTATION,
+            ExifInterface.ORIENTATION_NORMAL,
+        )
+        val matrix = Matrix()
+
+        when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.preScale(-1f, 1f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.preScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> {
+                matrix.preScale(-1f, 1f)
+                matrix.postRotate(270f)
+            }
+            ExifInterface.ORIENTATION_TRANSVERSE -> {
+                matrix.preScale(-1f, 1f)
+                matrix.postRotate(90f)
+            }
+            else -> return this
+        }
+
+        return Bitmap.createBitmap(
+            this,
+            0,
+            0,
+            width,
+            height,
+            matrix,
+            true,
+        )
     }
 
     private fun parseManifest(json: String): TransferPayload {

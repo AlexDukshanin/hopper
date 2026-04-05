@@ -35,8 +35,8 @@ data class AppSettings(
     val includeDirectionInCopy: Boolean = true,
     val showPhotosInJournal: Boolean = true,
     val collectionLayoutMode: CollectionLayoutMode = CollectionLayoutMode.Grid,
-    val photoQualityJpeg: Int = 92,
-    val sharePhotoQualityJpeg: Int = 72,
+    val photoQualityJpeg: Int = 72,
+    val sharePhotoQualityJpeg: Int = 60,
 ) {
     val topDirectionLabel: String
         get() = if (isPrimaryDirectionOnTop) primaryDirectionLabel else secondaryDirectionLabel
@@ -243,7 +243,7 @@ class UserSettingsRepository(
         const val MAX_NUMBER_SIZE = 27f
         const val MIN_PHOTO_QUALITY_JPEG = 60
         const val MAX_PHOTO_QUALITY_JPEG = 92
-        const val DEFAULT_PHOTO_QUALITY_JPEG = 92
-        const val DEFAULT_SHARE_PHOTO_QUALITY_JPEG = 72
+        const val DEFAULT_PHOTO_QUALITY_JPEG = 72
+        const val DEFAULT_SHARE_PHOTO_QUALITY_JPEG = 60
     }
 }
