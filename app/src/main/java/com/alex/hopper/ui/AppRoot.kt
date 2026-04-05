@@ -68,11 +68,19 @@ fun XdwApp(
     val allEntries by viewModel.allEntries.collectAsStateWithLifecycle()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    val currentRouteCollectionId = when (currentRoute) {
+        AppRoute.Journal.route -> navBackStackEntry?.arguments?.getLong(AppRoute.Journal.collectionIdArg)
+        AppRoute.Camera.route -> navBackStackEntry?.arguments?.getLong(AppRoute.Camera.collectionIdArg)
+        AppRoute.SearchCollection.route -> navBackStackEntry?.arguments?.getLong(AppRoute.SearchCollection.collectionIdArg)
+        else -> null
+    }
     var settingsSource by rememberSaveable { mutableStateOf(SettingsSource.Collections) }
     val showJournalActions = currentRoute == AppRoute.Journal.route ||
         currentRoute == AppRoute.Camera.route ||
         currentRoute == AppRoute.SearchCollection.route ||
         (currentRoute == AppRoute.Settings.route && settingsSource == SettingsSource.Journal)
+    val bottomBarCollectionId = currentRouteCollectionId
+        ?: selectedCollectionId?.takeIf { settingsSource == SettingsSource.Journal }
     val showSearchAction = currentRoute == AppRoute.Collections.route ||
         currentRoute == AppRoute.SearchGlobal.route ||
         currentRoute == AppRoute.SearchCollection.route ||
@@ -143,11 +151,11 @@ fun XdwApp(
             if (showBottomBar) {
                 MainBottomBar(
                     currentRoute = currentRoute,
-                    canOpenCamera = selectedCollectionId != null,
+                    canOpenCamera = bottomBarCollectionId != null,
                     showJournalActions = showJournalActions,
                     showSearchAction = showSearchAction,
                     onNavigateJournal = {
-                        selectedCollectionId?.let { collectionId ->
+                        bottomBarCollectionId?.let { collectionId ->
                             val cameFromJournal = currentRoute == AppRoute.Camera.route &&
                                 navController.previousBackStackEntry?.destination?.route == AppRoute.Journal.route
                             if (cameFromJournal) {
@@ -165,7 +173,7 @@ fun XdwApp(
                         }
                     },
                     onNavigateCamera = {
-                        selectedCollectionId?.let { collectionId ->
+                        bottomBarCollectionId?.let { collectionId ->
                             navController.navigate(AppRoute.Camera.createRoute(collectionId)) {
                                 popUpTo(navController.graph.findStartDestination().id) {
                                     saveState = true
@@ -193,7 +201,7 @@ fun XdwApp(
                         }
                     },
                     onNavigateSearch = {
-                        val targetRoute = selectedCollectionId
+                        val targetRoute = bottomBarCollectionId
                             ?.takeIf { showJournalActions }
                             ?.let(AppRoute.SearchCollection::createRoute)
                             ?: AppRoute.SearchGlobal.route
