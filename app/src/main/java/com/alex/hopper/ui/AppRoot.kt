@@ -73,7 +73,8 @@ fun XdwApp(
         currentRoute == AppRoute.Camera.route ||
         currentRoute == AppRoute.SearchCollection.route ||
         (currentRoute == AppRoute.Settings.route && settingsSource == SettingsSource.Journal)
-    val showSearchAction = currentRoute == AppRoute.SearchGlobal.route ||
+    val showSearchAction = currentRoute == AppRoute.Collections.route ||
+        currentRoute == AppRoute.SearchGlobal.route ||
         currentRoute == AppRoute.SearchCollection.route ||
         showJournalActions
     val showBottomBar = currentRoute == AppRoute.Collections.route ||

@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.view.View
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -45,8 +46,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -59,14 +58,18 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.Observer
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.alex.hopper.ui.MainViewModel
 import com.alex.hopper.util.await
 import java.io.File
+import kotlin.coroutines.resume
 import kotlin.math.roundToInt
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 private object ScanGuideSpec {
     const val widthFraction = 1f
@@ -88,24 +91,32 @@ fun CameraScreen(
     var hasPermission by remember {
         mutableStateOf(context.hasCameraPermission())
     }
-    var cameraSessionKey by remember { mutableIntStateOf(0) }
+    var shouldShowCamera by remember {
+        mutableStateOf(
+            hasPermission && lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED),
+        )
+    }
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
         hasPermission = granted
-        if (granted) {
-            cameraSessionKey += 1
-        }
+        shouldShowCamera = granted && lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
     }
 
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                val granted = context.hasCameraPermission()
-                hasPermission = granted
-                if (granted) {
-                    cameraSessionKey += 1
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    val granted = context.hasCameraPermission()
+                    hasPermission = granted
+                    shouldShowCamera = granted
                 }
+
+                Lifecycle.Event.ON_PAUSE -> {
+                    shouldShowCamera = false
+                }
+
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -130,17 +141,22 @@ fun CameraScreen(
         return
     }
 
-    key(cameraSessionKey, replaceEntryId, collectionId) {
-        CameraCaptureState(
-            viewModel = viewModel,
+    if (!shouldShowCamera) {
+        CameraPreparingState(
             contentPadding = contentPadding,
-            statusMessage = cameraState.statusMessage,
-            isProcessing = cameraState.isProcessing,
-            errorMessage = cameraState.errorMessage,
-            replaceEntryId = replaceEntryId,
-            collectionId = collectionId,
         )
+        return
     }
+
+    CameraCaptureState(
+        viewModel = viewModel,
+        contentPadding = contentPadding,
+        statusMessage = cameraState.statusMessage,
+        isProcessing = cameraState.isProcessing,
+        errorMessage = cameraState.errorMessage,
+        replaceEntryId = replaceEntryId,
+        collectionId = collectionId,
+    )
 }
 
 @Composable
@@ -189,6 +205,40 @@ private fun CameraPermissionState(
 }
 
 @Composable
+private fun CameraPreparingState(
+    contentPadding: PaddingValues,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(contentPadding)
+            .padding(20.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        ElevatedCard {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                CircularProgressIndicator()
+                Text(
+                    text = "Запускаю камеру",
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Text(
+                    text = "Подождите секунду, пока появится превью.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun CameraCaptureState(
     viewModel: MainViewModel,
     contentPadding: PaddingValues,
@@ -204,11 +254,16 @@ private fun CameraCaptureState(
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var bindError by remember { mutableStateOf<String?>(null) }
-    var bindRequestKey by remember { mutableIntStateOf(0) }
+    var isCameraBound by remember { mutableStateOf(false) }
+    var isPreviewStreaming by remember { mutableStateOf(false) }
 
-    LaunchedEffect(previewView, lifecycleOwner, bindRequestKey) {
+    LaunchedEffect(previewView, lifecycleOwner) {
         val currentPreview = previewView ?: return@LaunchedEffect
+        imageCapture = null
+        bindError = null
+        isCameraBound = false
         runCatching {
+            currentPreview.awaitPreviewReady()
             bindCamera(
                 context = context,
                 lifecycleOwner = lifecycleOwner,
@@ -217,26 +272,35 @@ private fun CameraCaptureState(
         }.onSuccess { boundCamera ->
             cameraProvider = boundCamera.first
             imageCapture = boundCamera.second
+            isCameraBound = true
             bindError = null
         }.onFailure { exception ->
-            bindError = exception.message ?: "Не удалось запустить камеру."
+            bindError = exception.message.toFriendlyCameraMessage()
+            isCameraBound = false
         }
     }
 
-    DisposableEffect(lifecycleOwner, previewView) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && previewView != null) {
-                bindRequestKey += 1
+    DisposableEffect(previewView) {
+        val currentPreview = previewView
+        if (currentPreview == null) {
+            isPreviewStreaming = false
+            onDispose { }
+        } else {
+            val observer = Observer<PreviewView.StreamState> { state ->
+                isPreviewStreaming = state == PreviewView.StreamState.STREAMING
+            }
+            currentPreview.previewStreamState.observeForever(observer)
+            onDispose {
+                currentPreview.previewStreamState.removeObserver(observer)
+                isPreviewStreaming = false
             }
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
     }
 
-    DisposableEffect(cameraProvider) {
+    DisposableEffect(Unit) {
         onDispose {
+            imageCapture = null
+            isCameraBound = false
             cameraProvider?.unbindAll()
         }
     }
@@ -258,11 +322,19 @@ private fun CameraCaptureState(
 
         CameraGuideOverlay(
             modifier = Modifier.fillMaxSize(),
-            statusMessage = statusMessage,
+            statusMessage = if (!isPreviewStreaming && bindError == null && !isProcessing) {
+                "Запускаю камеру..."
+            } else {
+                statusMessage
+            },
             isProcessing = isProcessing,
             errorMessage = errorMessage ?: bindError,
             onCapture = {
-                val capture = imageCapture ?: return@CameraGuideOverlay
+                val capture = imageCapture?.takeIf { isCameraBound && isPreviewStreaming }
+                if (capture == null) {
+                    viewModel.onCaptureError("Камера еще запускается. Подождите секунду и повторите.")
+                    return@CameraGuideOverlay
+                }
                 val outputFile = viewModel.createCaptureFile()
                 val scanBitmap = previewView?.bitmap?.let(::cropPreviewBitmapForScan)
                 takePicture(
@@ -289,7 +361,7 @@ private fun CameraCaptureState(
                     },
                 )
             },
-            captureEnabled = imageCapture != null && !isProcessing && bindError == null,
+            captureEnabled = imageCapture != null && isCameraBound && isPreviewStreaming && !isProcessing && bindError == null,
         )
     }
 }
@@ -483,7 +555,7 @@ private fun takePicture(
             }
 
             override fun onError(exception: ImageCaptureException) {
-                onError(exception.message ?: "Ошибка камеры.")
+                onError(exception.message.toFriendlyCameraMessage())
             }
         },
     )
@@ -512,4 +584,43 @@ private fun Context.hasCameraPermission(): Boolean {
         this,
         Manifest.permission.CAMERA,
     ) == PackageManager.PERMISSION_GRANTED
+}
+
+private suspend fun PreviewView.awaitPreviewReady() {
+    suspendCancellableCoroutine { continuation ->
+        if (isAttachedToWindow && width > 0 && height > 0) {
+            post {
+                if (continuation.isActive) {
+                    continuation.resume(Unit)
+                }
+            }
+            return@suspendCancellableCoroutine
+        }
+
+        val attachListener = object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(view: View) {
+                removeOnAttachStateChangeListener(this)
+                post {
+                    if (continuation.isActive) {
+                        continuation.resume(Unit)
+                    }
+                }
+            }
+
+            override fun onViewDetachedFromWindow(view: View) = Unit
+        }
+
+        addOnAttachStateChangeListener(attachListener)
+        continuation.invokeOnCancellation {
+            removeOnAttachStateChangeListener(attachListener)
+        }
+    }
+}
+
+private fun String?.toFriendlyCameraMessage(): String {
+    val rawMessage = this?.trim().orEmpty()
+    if (rawMessage.contains("Not bound to a valid Camera", ignoreCase = true)) {
+        return "Камера еще не готова. Подождите секунду и повторите."
+    }
+    return rawMessage.ifBlank { "Ошибка камеры." }
 }
