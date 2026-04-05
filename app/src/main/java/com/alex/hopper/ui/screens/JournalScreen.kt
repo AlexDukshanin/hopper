@@ -30,6 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.SwapVert
@@ -65,6 +66,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.alex.hopper.data.WagonCollection
 import com.alex.hopper.data.WagonEntry
 import com.alex.hopper.settings.AppSettings
 import com.alex.hopper.util.formatTimestamp
@@ -72,9 +74,11 @@ import java.io.File
 
 @Composable
 fun JournalScreen(
+    collection: WagonCollection?,
     entries: List<WagonEntry>,
     settings: AppSettings,
     contentPadding: PaddingValues,
+    onGoHome: () -> Unit,
     onOpenCamera: () -> Unit,
     onOpenEntry: (Long) -> Unit,
     onOpenPhoto: (Long) -> Unit,
@@ -90,6 +94,22 @@ fun JournalScreen(
     onMoveEntry: (Long, Int) -> Unit,
     onCopied: () -> Unit,
 ) {
+    val activeCollection = collection
+    if (activeCollection == null) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "Подборка загружается...",
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
+        return
+    }
+
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
     val rowNumbers = buildPrimaryNumbers(entries, settings, CopyListFormat.Row)
@@ -102,8 +122,8 @@ fun JournalScreen(
     var editingDirections by remember { mutableStateOf(false) }
     var copyListDialogVisible by remember { mutableStateOf(false) }
     var sendListDialogVisible by remember { mutableStateOf(false) }
-    var journalDescriptionDraft by rememberSaveable(settings.journalDescription) {
-        mutableStateOf(settings.journalDescription)
+    var journalDescriptionDraft by rememberSaveable(activeCollection.id, activeCollection.description) {
+        mutableStateOf(activeCollection.description)
     }
 
     LazyColumn(
@@ -123,9 +143,41 @@ fun JournalScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                text = "Журнал вагонов",
+                                style = MaterialTheme.typography.headlineSmall,
+                            )
+                            Text(
+                                text = activeCollection.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        FilledTonalIconButton(
+                            onClick = onGoHome,
+                            modifier = Modifier.size(46.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Home,
+                                contentDescription = "Подборки",
+                            )
+                        }
+                    }
                     Text(
-                        text = "Журнал вагонов",
-                        style = MaterialTheme.typography.headlineSmall,
+                        text = "Список и описание относятся только к этой подборке.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -163,7 +215,7 @@ fun JournalScreen(
                         minLines = 3,
                         maxLines = 3,
                         shape = RoundedCornerShape(18.dp),
-                        label = { Text("Описание журнала") },
+                        label = { Text("Описание подборки") },
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -173,7 +225,7 @@ fun JournalScreen(
                         FilledTonalButton(
                             modifier = Modifier.weight(1f),
                             onClick = { onSaveJournalDescription(journalDescriptionDraft.trim()) },
-                            enabled = journalDescriptionDraft != settings.journalDescription,
+                            enabled = journalDescriptionDraft != activeCollection.description,
                         ) {
                             Text("Сохранить описание")
                         }

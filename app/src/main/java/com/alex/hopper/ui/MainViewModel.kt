@@ -4,12 +4,15 @@ import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.alex.hopper.data.CollectionSummary
 import com.alex.hopper.data.RailRepository
+import com.alex.hopper.data.WagonCollection
 import com.alex.hopper.data.WagonEntry
 import com.alex.hopper.settings.AppIconManager
 import com.alex.hopper.settings.AppIconMode
 import com.alex.hopper.settings.AppSettings
 import com.alex.hopper.settings.AppThemeMode
+import com.alex.hopper.settings.CollectionLayoutMode
 import com.alex.hopper.settings.NewEntryPosition
 import com.alex.hopper.settings.UserSettingsRepository
 import java.io.File
@@ -21,6 +24,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -32,6 +37,7 @@ data class CameraUiState(
 
 sealed interface AppEvent {
     data class OpenEntry(val entryId: Long) : AppEvent
+    data class OpenCollection(val collectionId: Long) : AppEvent
     data class Snackbar(
         val message: String,
         val durationMillis: Long = 2_000,
@@ -50,34 +56,109 @@ class MainViewModel(
     private val appIconManager: AppIconManager,
 ) : ViewModel() {
     private val pendingDeleteEntry = MutableStateFlow<WagonEntry?>(null)
+    private val _selectedCollectionId = MutableStateFlow<Long?>(null)
+    private val _cameraState = MutableStateFlow(CameraUiState())
+    private val _events = MutableSharedFlow<AppEvent>(extraBufferCapacity = 1)
 
     val settings: StateFlow<AppSettings> = settingsRepository.settings
+    val selectedCollectionId: StateFlow<Long?> = _selectedCollectionId.asStateFlow()
+    val cameraState: StateFlow<CameraUiState> = _cameraState.asStateFlow()
+    val events = _events.asSharedFlow()
 
-    val entries: StateFlow<List<WagonEntry>> = combine(
-        repository.observeEntries(),
-        pendingDeleteEntry,
-    ) { entries, pending ->
-        entries.filterNot { it.id == pending?.id }
-    }
+    val collections: StateFlow<List<CollectionSummary>> = repository.observeCollections()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = emptyList(),
         )
 
-    private val _cameraState = MutableStateFlow(CameraUiState())
-    val cameraState: StateFlow<CameraUiState> = _cameraState.asStateFlow()
+    val currentCollection: StateFlow<WagonCollection?> = selectedCollectionId
+        .flatMapLatest { collectionId ->
+            if (collectionId == null) {
+                flowOf(null)
+            } else {
+                repository.observeCollection(collectionId)
+            }
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = null,
+        )
 
-    private val _events = MutableSharedFlow<AppEvent>(extraBufferCapacity = 1)
-    val events = _events.asSharedFlow()
+    val entries: StateFlow<List<WagonEntry>> = combine(
+        selectedCollectionId.flatMapLatest { collectionId ->
+            if (collectionId == null) {
+                flowOf(emptyList())
+            } else {
+                repository.observeEntries(collectionId)
+            }
+        },
+        pendingDeleteEntry,
+    ) { items, pending ->
+        items.filterNot { it.id == pending?.id }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = emptyList(),
+    )
 
     init {
         appIconManager.apply(settings.value.appIconMode)
+
+        viewModelScope.launch {
+            repository.importLegacyJournalDescription(settings.value.journalDescription)
+        }
+
+        viewModelScope.launch {
+            collections.collect { items ->
+                val currentId = _selectedCollectionId.value
+                when {
+                    items.isEmpty() -> _selectedCollectionId.value = null
+                    currentId == null || items.none { it.id == currentId } -> {
+                        _selectedCollectionId.value = items.first().id
+                    }
+                }
+            }
+        }
     }
 
     fun observeEntry(id: Long): Flow<WagonEntry?> = repository.observeEntry(id)
 
     fun createCaptureFile(): File = repository.createCaptureFile()
+
+    fun selectCollection(collectionId: Long) {
+        _selectedCollectionId.value = collectionId
+    }
+
+    fun createCollection(name: String) {
+        viewModelScope.launch {
+            val collectionId = repository.createCollection(name)
+            _selectedCollectionId.value = collectionId
+            _events.emit(AppEvent.OpenCollection(collectionId))
+            _events.emit(AppEvent.Snackbar("Подборка создана", durationMillis = 1_000))
+        }
+    }
+
+    fun renameCollection(
+        collectionId: Long,
+        name: String,
+    ) {
+        viewModelScope.launch {
+            repository.renameCollection(collectionId, name)
+            _events.emit(AppEvent.Snackbar("Название обновлено", durationMillis = 1_000))
+        }
+    }
+
+    fun deleteCollection(collectionId: Long) {
+        viewModelScope.launch {
+            repository.deleteCollection(collectionId)
+            if (_selectedCollectionId.value == collectionId) {
+                _selectedCollectionId.value = null
+            }
+            _events.emit(AppEvent.Snackbar("Подборка удалена", durationMillis = 1_000))
+        }
+    }
 
     fun resetCameraState() {
         _cameraState.value = CameraUiState()
@@ -90,14 +171,18 @@ class MainViewModel(
         )
     }
 
-    fun processCapture(file: File, scanBitmap: Bitmap?) {
+    fun processCapture(
+        file: File,
+        scanBitmap: Bitmap?,
+        collectionId: Long,
+    ) {
         viewModelScope.launch {
             _cameraState.value = CameraUiState(
                 isProcessing = true,
                 statusMessage = "Снимок сохранен. Распознаю номер...",
             )
 
-            runCatching { repository.saveCapturedPhoto(file, scanBitmap) }
+            runCatching { repository.saveCapturedPhoto(file, scanBitmap, collectionId) }
                 .onSuccess { entryId ->
                     if (settings.value.newEntryPosition == NewEntryPosition.First) {
                         repository.moveEntry(entryId, 0)
@@ -137,6 +222,14 @@ class MainViewModel(
         viewModelScope.launch {
             repository.updateNote(id, note)
             _events.emit(AppEvent.Snackbar("Заметка сохранена", durationMillis = 1_400))
+        }
+    }
+
+    fun updateJournalDescription(description: String) {
+        val collectionId = _selectedCollectionId.value ?: return
+        viewModelScope.launch {
+            repository.updateCollectionDescription(collectionId, description)
+            _events.emit(AppEvent.Snackbar("Описание сохранено", durationMillis = 1_200))
         }
     }
 
@@ -206,6 +299,10 @@ class MainViewModel(
         settingsRepository.setNumberFontSizeSp(fontSizeSp)
     }
 
+    fun setCollectionLayoutMode(mode: CollectionLayoutMode) {
+        settingsRepository.setCollectionLayoutMode(mode)
+    }
+
     fun toggleDirection() {
         settingsRepository.toggleDirection()
         showSnackbar("Направление изменено", durationMillis = 1_000)
@@ -217,11 +314,6 @@ class MainViewModel(
     ) {
         settingsRepository.setDirectionLabels(primaryLabel, secondaryLabel)
         showSnackbar("Названия обновлены", durationMillis = 1_200)
-    }
-
-    fun updateJournalDescription(description: String) {
-        settingsRepository.setJournalDescription(description)
-        showSnackbar("Описание сохранено", durationMillis = 1_200)
     }
 
     fun setNewEntryPosition(position: NewEntryPosition) {

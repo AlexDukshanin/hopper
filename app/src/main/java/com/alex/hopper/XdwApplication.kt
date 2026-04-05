@@ -22,7 +22,7 @@ class AppContainer(context: Context) {
         context,
         AppDatabase::class.java,
         "xdw.db",
-    ).addMigrations(MIGRATION_1_2).build()
+    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
 
     private val photoStorage = PhotoStorage(context)
     private val ocrEngine = OcrEngine(context)
@@ -31,7 +31,8 @@ class AppContainer(context: Context) {
     val appIconManager = AppIconManager(context)
 
     val repository = RailRepository(
-        dao = database.wagonEntryDao(),
+        wagonEntryDao = database.wagonEntryDao(),
+        collectionDao = database.collectionDao(),
         ocrEngine = ocrEngine,
         extractor = extractor,
         photoStorage = photoStorage,
@@ -57,6 +58,43 @@ class AppContainer(context: Context) {
                         )
                         index += 1L
                     }
+                }
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS collections (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        name TEXT NOT NULL,
+                        description TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "ALTER TABLE wagon_entries ADD COLUMN collectionId INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_wagon_entries_collectionId ON wagon_entries(collectionId)",
+                )
+
+                val countCursor = db.query("SELECT COUNT(*) FROM wagon_entries")
+                val hasEntries = countCursor.use {
+                    it.moveToFirst()
+                    it.getLong(0) > 0L
+                }
+
+                if (hasEntries) {
+                    db.execSQL(
+                        "INSERT INTO collections (id, name, description, createdAt) VALUES (?, ?, ?, ?)",
+                        arrayOf<Any>(1L, "Подборка 1", "", System.currentTimeMillis()),
+                    )
+                    db.execSQL(
+                        "UPDATE wagon_entries SET collectionId = 1 WHERE collectionId = 0",
+                    )
                 }
             }
         }

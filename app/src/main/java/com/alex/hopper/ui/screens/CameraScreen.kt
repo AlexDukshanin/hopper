@@ -77,6 +77,7 @@ fun CameraScreen(
     viewModel: MainViewModel,
     contentPadding: PaddingValues,
     replaceEntryId: Long?,
+    collectionId: Long?,
 ) {
     val context = LocalContext.current
     val cameraState by viewModel.cameraState.collectAsStateWithLifecycle()
@@ -112,6 +113,7 @@ fun CameraScreen(
         isProcessing = cameraState.isProcessing,
         errorMessage = cameraState.errorMessage,
         replaceEntryId = replaceEntryId,
+        collectionId = collectionId,
     )
 }
 
@@ -168,6 +170,7 @@ private fun CameraCaptureState(
     isProcessing: Boolean,
     errorMessage: String?,
     replaceEntryId: Long?,
+    collectionId: Long?,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -229,8 +232,13 @@ private fun CameraCaptureState(
                     onSaved = { savedFile ->
                         if (replaceEntryId != null) {
                             viewModel.replacePhoto(replaceEntryId, savedFile)
+                        } else if (collectionId != null) {
+                            viewModel.processCapture(savedFile, scanBitmap, collectionId)
                         } else {
-                            viewModel.processCapture(savedFile, scanBitmap)
+                            if (savedFile.exists()) {
+                                savedFile.delete()
+                            }
+                            viewModel.onCaptureError("Сначала выберите подборку.")
                         }
                     },
                     onError = { message ->

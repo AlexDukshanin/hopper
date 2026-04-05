@@ -8,11 +8,11 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface WagonEntryDao {
-    @Query("SELECT * FROM wagon_entries ORDER BY positionIndex ASC")
-    fun observeEntries(): Flow<List<WagonEntry>>
+    @Query("SELECT * FROM wagon_entries WHERE collectionId = :collectionId ORDER BY positionIndex ASC")
+    fun observeEntries(collectionId: Long): Flow<List<WagonEntry>>
 
-    @Query("SELECT * FROM wagon_entries ORDER BY positionIndex ASC")
-    suspend fun getEntriesOrdered(): List<WagonEntry>
+    @Query("SELECT * FROM wagon_entries WHERE collectionId = :collectionId ORDER BY positionIndex ASC")
+    suspend fun getEntriesOrdered(collectionId: Long): List<WagonEntry>
 
     @Query("SELECT * FROM wagon_entries WHERE id = :id LIMIT 1")
     fun observeEntry(id: Long): Flow<WagonEntry?>
@@ -35,8 +35,11 @@ interface WagonEntryDao {
     @Query("UPDATE wagon_entries SET positionIndex = :positionIndex WHERE id = :id")
     suspend fun updatePositionIndex(id: Long, positionIndex: Long)
 
-    @Query("SELECT MAX(positionIndex) FROM wagon_entries")
-    suspend fun getMaxPositionIndex(): Long?
+    @Query("SELECT MAX(positionIndex) FROM wagon_entries WHERE collectionId = :collectionId")
+    suspend fun getMaxPositionIndex(collectionId: Long): Long?
+
+    @Query("SELECT * FROM wagon_entries WHERE collectionId = :collectionId ORDER BY positionIndex ASC")
+    suspend fun getEntriesByCollectionId(collectionId: Long): List<WagonEntry>
 
     @androidx.room.Transaction
     suspend fun replaceOrder(entries: List<WagonEntry>) {
@@ -47,4 +50,7 @@ interface WagonEntryDao {
 
     @Query("DELETE FROM wagon_entries WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM wagon_entries WHERE collectionId = :collectionId")
+    suspend fun deleteByCollectionId(collectionId: Long)
 }

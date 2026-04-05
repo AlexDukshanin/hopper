@@ -11,20 +11,76 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
 class RailRepository(
-    private val dao: WagonEntryDao,
+    private val wagonEntryDao: WagonEntryDao,
+    private val collectionDao: CollectionDao,
     private val ocrEngine: OcrEngine,
     private val extractor: WagonNumberExtractor,
     private val photoStorage: PhotoStorage,
 ) {
-    fun observeEntries(): Flow<List<WagonEntry>> = dao.observeEntries()
+    fun observeCollections(): Flow<List<CollectionSummary>> = collectionDao.observeCollections()
 
-    fun observeEntry(id: Long): Flow<WagonEntry?> = dao.observeEntry(id)
+    fun observeCollection(id: Long): Flow<WagonCollection?> = collectionDao.observeCollection(id)
+
+    fun observeEntries(collectionId: Long): Flow<List<WagonEntry>> = wagonEntryDao.observeEntries(collectionId)
+
+    fun observeEntry(id: Long): Flow<WagonEntry?> = wagonEntryDao.observeEntry(id)
 
     fun createCaptureFile(): File = photoStorage.createCaptureFile()
+
+    suspend fun createCollection(name: String): Long = withContext(Dispatchers.IO) {
+        val existingCount = collectionDao.getCollections().size
+        val resolvedName = name.trim().ifBlank { "Подборка ${existingCount + 1}" }
+        collectionDao.insert(
+            WagonCollection(
+                name = resolvedName,
+                description = "",
+                createdAt = System.currentTimeMillis(),
+            ),
+        )
+    }
+
+    suspend fun renameCollection(
+        id: Long,
+        name: String,
+    ) = withContext(Dispatchers.IO) {
+        val current = collectionDao.getCollectionById(id) ?: return@withContext
+        val resolvedName = name.trim().ifBlank { current.name }
+        collectionDao.updateName(id, resolvedName)
+    }
+
+    suspend fun updateCollectionDescription(
+        id: Long,
+        description: String,
+    ) = withContext(Dispatchers.IO) {
+        collectionDao.updateDescription(id, description.trim())
+    }
+
+    suspend fun importLegacyJournalDescription(description: String) = withContext(Dispatchers.IO) {
+        if (description.isBlank()) return@withContext
+
+        val collections = collectionDao.getCollections()
+        if (collections.size != 1) return@withContext
+
+        val onlyCollection = collections.first()
+        if (onlyCollection.description.isBlank()) {
+            collectionDao.updateDescription(onlyCollection.id, description.trim())
+        }
+    }
+
+    suspend fun deleteCollection(collectionId: Long) = withContext(Dispatchers.IO) {
+        wagonEntryDao.getEntriesByCollectionId(collectionId).forEach { entry ->
+            if (entry.imagePath.isNotBlank()) {
+                File(entry.imagePath).takeIf(File::exists)?.delete()
+            }
+        }
+        wagonEntryDao.deleteByCollectionId(collectionId)
+        collectionDao.deleteById(collectionId)
+    }
 
     suspend fun saveCapturedPhoto(
         photoFile: File,
         scanBitmap: Bitmap?,
+        collectionId: Long,
     ): Long = withContext(Dispatchers.IO) {
         val scanRecognition = runCatching {
             if (scanBitmap != null) {
@@ -42,9 +98,10 @@ class RailRepository(
         }
         val extracted = extractor.extract(recognition)
 
-        dao.insert(
+        wagonEntryDao.insert(
             WagonEntry(
-                positionIndex = (dao.getMaxPositionIndex() ?: -1L) + 1L,
+                collectionId = collectionId,
+                positionIndex = (wagonEntryDao.getMaxPositionIndex(collectionId) ?: -1L) + 1L,
                 createdAt = System.currentTimeMillis(),
                 imagePath = photoFile.absolutePath,
                 primaryNumber = extracted.primaryNumber,
@@ -56,33 +113,34 @@ class RailRepository(
     }
 
     suspend fun updateNote(id: Long, note: String) = withContext(Dispatchers.IO) {
-        dao.updateNote(id, note.trim())
+        wagonEntryDao.updateNote(id, note.trim())
     }
 
     suspend fun updatePrimaryNumber(id: Long, number: String) = withContext(Dispatchers.IO) {
-        dao.updatePrimaryNumber(id, number.filter(Char::isDigit).take(12).ifBlank { null })
+        wagonEntryDao.updatePrimaryNumber(id, number.filter(Char::isDigit).take(12).ifBlank { null })
     }
 
     suspend fun moveEntry(
         entryId: Long,
         targetIndex: Int,
     ) = withContext(Dispatchers.IO) {
-        val ordered = dao.getEntriesOrdered().toMutableList()
+        val movingEntry = wagonEntryDao.getEntryById(entryId) ?: return@withContext
+        val ordered = wagonEntryDao.getEntriesOrdered(movingEntry.collectionId).toMutableList()
         val currentIndex = ordered.indexOfFirst { it.id == entryId }
         if (currentIndex == -1) return@withContext
 
-        val movingEntry = ordered.removeAt(currentIndex)
+        ordered.removeAt(currentIndex)
         val boundedTargetIndex = targetIndex.coerceIn(0, ordered.size)
         ordered.add(boundedTargetIndex, movingEntry)
-        dao.replaceOrder(ordered)
+        wagonEntryDao.replaceOrder(ordered)
     }
 
     suspend fun replacePhoto(entryId: Long, newPhotoFile: File) = withContext(Dispatchers.IO) {
-        val entry = dao.getEntryById(entryId)
+        val entry = wagonEntryDao.getEntryById(entryId)
             ?: error("Запись для замены фото не найдена")
         val previousPath = entry.imagePath
 
-        dao.updateImagePath(entryId, newPhotoFile.absolutePath)
+        wagonEntryDao.updateImagePath(entryId, newPhotoFile.absolutePath)
 
         if (previousPath.isNotBlank() && previousPath != newPhotoFile.absolutePath) {
             File(previousPath).takeIf(File::exists)?.delete()
@@ -90,19 +148,19 @@ class RailRepository(
     }
 
     suspend fun deletePhoto(entryId: Long) = withContext(Dispatchers.IO) {
-        val entry = dao.getEntryById(entryId)
+        val entry = wagonEntryDao.getEntryById(entryId)
             ?: error("Запись для удаления фото не найдена")
 
         if (entry.imagePath.isNotBlank()) {
             File(entry.imagePath).takeIf(File::exists)?.delete()
         }
-        dao.updateImagePath(entryId, "")
+        wagonEntryDao.updateImagePath(entryId, "")
     }
 
     suspend fun deleteEntry(entry: WagonEntry) = withContext(Dispatchers.IO) {
         if (entry.imagePath.isNotBlank()) {
             File(entry.imagePath).takeIf(File::exists)?.delete()
         }
-        dao.deleteById(entry.id)
+        wagonEntryDao.deleteById(entry.id)
     }
 }

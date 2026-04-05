@@ -19,6 +19,11 @@ enum class NewEntryPosition {
     Last,
 }
 
+enum class CollectionLayoutMode {
+    Grid,
+    List,
+}
+
 data class AppSettings(
     val themeMode: AppThemeMode = AppThemeMode.VercelStyle,
     val appIconMode: AppIconMode = AppIconMode.Yellow,
@@ -30,6 +35,7 @@ data class AppSettings(
     val newEntryPosition: NewEntryPosition = NewEntryPosition.Last,
     val includeDirectionInCopy: Boolean = true,
     val showPhotosInJournal: Boolean = true,
+    val collectionLayoutMode: CollectionLayoutMode = CollectionLayoutMode.Grid,
 ) {
     val topDirectionLabel: String
         get() = if (isPrimaryDirectionOnTop) primaryDirectionLabel else secondaryDirectionLabel
@@ -113,6 +119,13 @@ class UserSettingsRepository(
         _settings.value = loadSettings()
     }
 
+    fun setCollectionLayoutMode(mode: CollectionLayoutMode) {
+        preferences.edit()
+            .putString(KEY_COLLECTION_LAYOUT_MODE, mode.name)
+            .apply()
+        _settings.value = loadSettings()
+    }
+
     private fun loadSettings(): AppSettings {
         val themeMode = when (preferences.getString(KEY_THEME_MODE, AppThemeMode.VercelStyle.name)) {
             AppThemeMode.VercelStyle.name,
@@ -141,6 +154,13 @@ class UserSettingsRepository(
             }
             ?: NewEntryPosition.Last
 
+        val collectionLayoutMode = preferences.getString(
+            KEY_COLLECTION_LAYOUT_MODE,
+            CollectionLayoutMode.Grid.name,
+        )?.let { stored ->
+            CollectionLayoutMode.entries.firstOrNull { it.name == stored }
+        } ?: CollectionLayoutMode.Grid
+
         val numberFontSizeSp = preferences.getFloat(KEY_NUMBER_FONT_SIZE, 20f)
             .coerceIn(MIN_NUMBER_SIZE, MAX_NUMBER_SIZE)
             .roundToInt()
@@ -159,6 +179,7 @@ class UserSettingsRepository(
             newEntryPosition = newEntryPosition,
             includeDirectionInCopy = preferences.getBoolean(KEY_INCLUDE_DIRECTION_IN_COPY, true),
             showPhotosInJournal = preferences.getBoolean(KEY_SHOW_PHOTOS_IN_JOURNAL, true),
+            collectionLayoutMode = collectionLayoutMode,
         )
     }
 
@@ -174,6 +195,7 @@ class UserSettingsRepository(
         const val KEY_NEW_ENTRY_POSITION = "new_entry_position"
         const val KEY_INCLUDE_DIRECTION_IN_COPY = "include_direction_in_copy"
         const val KEY_SHOW_PHOTOS_IN_JOURNAL = "show_photos_in_journal"
+        const val KEY_COLLECTION_LAYOUT_MODE = "collection_layout_mode"
 
         const val DEFAULT_PRIMARY_LABEL = "ЗАПАД"
         const val DEFAULT_SECONDARY_LABEL = "ВОСТОК"
