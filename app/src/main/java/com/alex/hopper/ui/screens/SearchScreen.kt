@@ -183,7 +183,10 @@ fun SearchScreen(
                 item {
                     SectionTitle("Подборки")
                 }
-                items(matchingCollections, key = { it.id }) { collection ->
+                items(
+                    items = matchingCollections,
+                    key = { collection -> "collection-${collection.id}" },
+                ) { collection ->
                     SearchCollectionCard(
                         collection = collection,
                         onClick = { onOpenCollection(collection.id) },
@@ -195,7 +198,10 @@ fun SearchScreen(
                 item {
                     SectionTitle(if (isGlobalSearch) "Карточки вагонов" else "Результаты")
                 }
-                items(matchingEntries, key = { it.id }) { entry ->
+                items(
+                    items = matchingEntries,
+                    key = { entry -> "entry-${entry.id}" },
+                ) { entry ->
                     SearchEntryCard(
                         entry = entry,
                         order = entryOrdersById[entry.id],
