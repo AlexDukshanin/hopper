@@ -36,6 +36,18 @@ Generated APK:
 
 - `app/build/outputs/apk/debug/app-debug.apk`
 
+## Download APK
+
+Ready-to-install APK in this repository:
+
+- `downloads/HOPPER-universal-debug.apk`
+
+Notes:
+
+- This is a universal debug build that can be downloaded and installed directly
+- If Android blocks installation, allow install from the browser or file manager
+- A signed release APK can be added later when a release keystore is prepared
+
 ## Developer
 
 - AlexDukshanin
