@@ -7,7 +7,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlin.math.roundToInt
 
 enum class AppThemeMode {
-    VercelStyle,
     SupabaseDark,
     StripeStyle,
     AirbnbStyle,
@@ -25,7 +24,7 @@ enum class CollectionLayoutMode {
 }
 
 data class AppSettings(
-    val themeMode: AppThemeMode = AppThemeMode.VercelStyle,
+    val themeMode: AppThemeMode = AppThemeMode.HybridClean,
     val appIconMode: AppIconMode = AppIconMode.Yellow,
     val numberFontSizeSp: Float = 20f,
     val primaryDirectionLabel: String = "ЗАПАД",
@@ -127,19 +126,18 @@ class UserSettingsRepository(
     }
 
     private fun loadSettings(): AppSettings {
-        val themeMode = when (preferences.getString(KEY_THEME_MODE, AppThemeMode.VercelStyle.name)) {
-            AppThemeMode.VercelStyle.name,
+        val themeMode = when (preferences.getString(KEY_THEME_MODE, AppThemeMode.HybridClean.name)) {
+            "VercelStyle",
             "AppleLight",
             "AirtableLight",
             "FigmaLight",
             null,
-            -> AppThemeMode.VercelStyle
-
+            -> AppThemeMode.HybridClean
             AppThemeMode.SupabaseDark.name -> AppThemeMode.SupabaseDark
             AppThemeMode.StripeStyle.name -> AppThemeMode.StripeStyle
             AppThemeMode.AirbnbStyle.name -> AppThemeMode.AirbnbStyle
             AppThemeMode.HybridClean.name -> AppThemeMode.HybridClean
-            else -> AppThemeMode.VercelStyle
+            else -> AppThemeMode.HybridClean
         }
 
         val appIconMode = preferences.getString(KEY_APP_ICON_MODE, AppIconMode.Yellow.name)

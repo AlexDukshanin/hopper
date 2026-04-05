@@ -126,17 +126,6 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.titleMedium,
                     )
                     ThemeOptionCard(
-                        title = "Vercel",
-                        subtitle = "Минималистичная светлая тема с графитовым акцентом",
-                        swatches = listOf(
-                            Color(0xFFF8F8F8),
-                            Color(0xFFFFFFFF),
-                            Color(0xFF111111),
-                        ),
-                        selected = settings.themeMode == AppThemeMode.VercelStyle,
-                        onClick = { onSelectTheme(AppThemeMode.VercelStyle) },
-                    )
-                    ThemeOptionCard(
                         title = "Темная Supabase",
                         subtitle = "Темная база с зеленым акцентом",
                         swatches = listOf(

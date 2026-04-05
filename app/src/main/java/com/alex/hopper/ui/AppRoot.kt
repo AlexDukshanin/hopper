@@ -162,10 +162,10 @@ fun XdwApp(
                         }
                     },
                     onNavigateSettings = {
-                        settingsSource = if (currentRoute == AppRoute.Collections.route) {
-                            SettingsSource.Collections
-                        } else {
-                            SettingsSource.Journal
+                        settingsSource = when (currentRoute) {
+                            AppRoute.Collections.route -> SettingsSource.Collections
+                            AppRoute.Settings.route -> settingsSource
+                            else -> SettingsSource.Journal
                         }
                         navController.navigate(AppRoute.Settings.route) {
                             popUpTo(navController.graph.findStartDestination().id) {

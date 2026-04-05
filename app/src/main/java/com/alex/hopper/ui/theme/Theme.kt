@@ -119,12 +119,11 @@ private val HybridCleanColors = lightColorScheme(
 
 @Composable
 fun XdwTheme(
-    themeMode: AppThemeMode = AppThemeMode.VercelStyle,
+    themeMode: AppThemeMode = AppThemeMode.HybridClean,
     content: @Composable () -> Unit,
 ) {
     MaterialTheme(
         colorScheme = when (themeMode) {
-            AppThemeMode.VercelStyle -> VercelColors
             AppThemeMode.SupabaseDark -> SupabaseDarkColors
             AppThemeMode.StripeStyle -> StripeColors
             AppThemeMode.AirbnbStyle -> AirbnbColors
