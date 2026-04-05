@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -616,10 +617,15 @@ private fun MoveEntryDialog(
     onMove: (Int) -> Unit,
 ) {
     val currentIndex = entries.indexOfFirst { it.id == entry.id }.coerceAtLeast(0)
-    var selectedIndex by remember(entry.id, entries.size) { mutableStateOf(currentIndex) }
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = currentIndex)
-    val previewText = remember(entry.id, entries, selectedIndex) {
-        buildMovePreview(entries, entry.id, selectedIndex)
+    val remainingEntries = remember(entries, entry.id) {
+        entries.filterNot { it.id == entry.id }
+    }
+    var selectedSlot by remember(entry.id, remainingEntries.size) {
+        mutableStateOf(currentIndex.coerceIn(0, remainingEntries.size))
+    }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = (selectedSlot * 2).coerceAtLeast(0))
+    val previewText = remember(entry.id, remainingEntries, selectedSlot) {
+        buildMovePreview(remainingEntries, entry, selectedSlot)
     }
 
     AlertDialog(
@@ -632,15 +638,15 @@ private fun MoveEntryDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    text = "Прокрутите список и выберите новую позицию карточки.",
+                    text = "Карточка временно убрана из списка. Нажмите в пустой промежуток, куда ее вставить.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                MoveEntryWheel(
-                    entries = entries,
-                    selectedIndex = selectedIndex,
+                MoveEntrySlots(
+                    entries = remainingEntries,
+                    selectedSlot = selectedSlot,
                     listState = listState,
-                    onSelect = { selectedIndex = it },
+                    onSelect = { selectedSlot = it },
                 )
                 AnimatedContent(targetState = previewText, label = "move_preview") { text ->
                     Text(
@@ -653,8 +659,8 @@ private fun MoveEntryDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onMove(selectedIndex) },
-                enabled = selectedIndex != currentIndex,
+                onClick = { onMove(selectedSlot) },
+                enabled = selectedSlot != currentIndex,
             ) {
                 Text("Переместить")
             }
@@ -668,12 +674,14 @@ private fun MoveEntryDialog(
 }
 
 @Composable
-private fun MoveEntryWheel(
+private fun MoveEntrySlots(
     entries: List<WagonEntry>,
-    selectedIndex: Int,
+    selectedSlot: Int,
     listState: LazyListState,
     onSelect: (Int) -> Unit,
 ) {
+    val dialogItems = remember(entries) { buildMoveDialogItems(entries) }
+
     Surface(
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -681,49 +689,154 @@ private fun MoveEntryWheel(
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(220.dp),
+                .height(260.dp),
             state = listState,
             verticalArrangement = Arrangement.spacedBy(6.dp),
             contentPadding = PaddingValues(vertical = 10.dp, horizontal = 8.dp),
         ) {
-            itemsIndexed(entries, key = { _, item -> item.id }) { index, item ->
-                val selected = index == selectedIndex
-                val containerColor by animateColorAsState(
-                    targetValue = if (selected) {
-                        MaterialTheme.colorScheme.primaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surface
-                    },
-                    label = "move_item_color",
-                )
-
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSelect(index) },
-                    shape = RoundedCornerShape(16.dp),
-                    color = containerColor,
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "${index + 1}.",
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                        Text(
-                            text = item.primaryNumber ?: "Номер не найден",
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontFamily = FontFamily.Monospace,
-                            ),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+            itemsIndexed(dialogItems, key = { _, item -> item.key }) { _, item ->
+                when (item) {
+                    is MoveDialogItem.Slot -> {
+                        MoveInsertionSlot(
+                            selected = selectedSlot == item.slotIndex,
+                            label = item.label,
+                            onClick = { onSelect(item.slotIndex) },
                         )
                     }
+
+                    is MoveDialogItem.Entry -> {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = "${item.order}.",
+                                    style = MaterialTheme.typography.labelLarge,
+                                )
+                                Text(
+                                    text = item.entry.primaryNumber ?: "Номер не найден",
+                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                        fontFamily = FontFamily.Monospace,
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private sealed interface MoveDialogItem {
+    val key: String
+
+    data class Slot(
+        val slotIndex: Int,
+        val label: String,
+    ) : MoveDialogItem {
+        override val key: String = "slot_$slotIndex"
+    }
+
+    data class Entry(
+        val entry: WagonEntry,
+        val order: Int,
+    ) : MoveDialogItem {
+        override val key: String = "entry_${entry.id}"
+    }
+}
+
+private fun buildMoveDialogItems(
+    entries: List<WagonEntry>,
+): List<MoveDialogItem> {
+    val items = mutableListOf<MoveDialogItem>()
+    val topLabel = if (entries.isEmpty()) {
+        "Вставить как первую карточку"
+    } else {
+        "Вставить перед ${entries.first().primaryNumber ?: "первой карточкой"}"
+    }
+    items += MoveDialogItem.Slot(slotIndex = 0, label = topLabel)
+
+    entries.forEachIndexed { index, item ->
+        items += MoveDialogItem.Entry(
+            entry = item,
+            order = index + 1,
+        )
+
+        val nextItem = entries.getOrNull(index + 1)
+        val slotLabel = if (nextItem != null) {
+            "Вставить между ${item.primaryNumber ?: "текущей карточкой"} и ${nextItem.primaryNumber ?: "следующей карточкой"}"
+        } else {
+            "Вставить после ${item.primaryNumber ?: "последней карточки"}"
+        }
+        items += MoveDialogItem.Slot(
+            slotIndex = index + 1,
+            label = slotLabel,
+        )
+    }
+
+    return items
+}
+
+@Composable
+private fun MoveInsertionSlot(
+    selected: Boolean,
+    label: String,
+    onClick: () -> Unit,
+) {
+    val slotHeight by animateDpAsState(
+        targetValue = if (selected) 42.dp else 18.dp,
+        label = "move_slot_height",
+    )
+    val containerColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            Color.Transparent
+        },
+        label = "move_slot_color",
+    )
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(slotHeight)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        color = containerColor,
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            AnimatedContent(targetState = selected, label = "slot_label") { isSelected ->
+                if (isSelected) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                } else {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 18.dp)
+                            .height(3.dp),
+                        shape = RoundedCornerShape(99.dp),
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                    ) {}
                 }
             }
         }
@@ -1128,36 +1241,21 @@ private fun buildPrimaryNumbers(
 
 private fun buildMovePreview(
     entries: List<WagonEntry>,
-    entryId: Long,
-    targetIndex: Int,
+    movingEntry: WagonEntry,
+    slotIndex: Int,
 ): String {
-    val currentIndex = entries.indexOfFirst { it.id == entryId }
-    if (currentIndex == -1) {
-        return "Позиция не найдена"
-    }
-    if (currentIndex == targetIndex) {
-        return "Карточка останется на текущем месте"
+    if (entries.isEmpty()) {
+        return "Карточка ${movingEntry.primaryNumber ?: ""} станет первой и единственной"
     }
 
-    val reordered = entries.toMutableList()
-    val movingEntry = reordered.removeAt(currentIndex)
-    reordered.add(targetIndex.coerceIn(0, reordered.size), movingEntry)
-    val finalIndex = reordered.indexOfFirst { it.id == entryId }
-    val previous = reordered.getOrNull(finalIndex - 1)?.primaryNumber ?: "начало списка"
-    val next = reordered.getOrNull(finalIndex + 1)?.primaryNumber ?: "конец списка"
+    val boundedSlot = slotIndex.coerceIn(0, entries.size)
+    val previous = entries.getOrNull(boundedSlot - 1)?.primaryNumber
+    val next = entries.getOrNull(boundedSlot)?.primaryNumber
+    val movingNumber = movingEntry.primaryNumber ?: "без номера"
 
     return when {
-        finalIndex == 0 && reordered.size > 1 -> {
-            "Карточка станет первой, перед ${reordered[1].primaryNumber ?: "следующей карточкой"}"
-        }
-        finalIndex == reordered.lastIndex && reordered.size > 1 -> {
-            "Карточка станет последней, после ${reordered[finalIndex - 1].primaryNumber ?: "предыдущей карточки"}"
-        }
-        reordered.size <= 1 -> {
-            "Карточка останется единственной"
-        }
-        else -> {
-            "Карточка встанет между $previous и $next"
-        }
+        boundedSlot == 0 -> "Карточка $movingNumber встанет первой, перед ${next ?: "списком"}"
+        boundedSlot == entries.size -> "Карточка $movingNumber встанет последней, после ${previous ?: "списка"}"
+        else -> "Карточка $movingNumber встанет между ${previous ?: "предыдущей"} и ${next ?: "следующей"}"
     }
 }
