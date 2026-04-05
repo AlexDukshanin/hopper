@@ -90,6 +90,15 @@ fun XdwApp(
         currentRoute == AppRoute.SearchCollection.route ||
         currentRoute == AppRoute.Settings.route
 
+    fun navigateToCollectionSection(targetRoute: String) {
+        navController.navigate(targetRoute) {
+            popUpTo(navController.graph.findStartDestination().id) {
+                inclusive = false
+            }
+            launchSingleTop = true
+        }
+    }
+
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
@@ -154,31 +163,33 @@ fun XdwApp(
                     showSearchAction = showSearchAction,
                     onNavigateJournal = {
                         bottomBarCollectionId?.let { collectionId ->
-                            val cameFromJournal = currentRoute == AppRoute.Camera.route &&
-                                navController.previousBackStackEntry?.destination?.route == AppRoute.Journal.route
-                            if (cameFromJournal) {
-                                navController.popBackStack()
-                            } else {
-                                val targetRoute = AppRoute.Journal.createRoute(collectionId)
-                                navController.navigate(targetRoute) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
+                            val previousBackStackEntry = navController.previousBackStackEntry
+                            val previousJournalCollectionId = previousBackStackEntry
+                                ?.arguments
+                                ?.getLong(AppRoute.Journal.collectionIdArg)
+                            val cameFromSameJournal = currentRoute == AppRoute.Camera.route &&
+                                previousBackStackEntry?.destination?.route == AppRoute.Journal.route &&
+                                previousJournalCollectionId == collectionId
+                            when {
+                                currentRoute == AppRoute.Journal.route &&
+                                    currentRouteCollectionId == collectionId -> Unit
+
+                                cameFromSameJournal -> navController.popBackStack()
+                                else -> navigateToCollectionSection(
+                                    AppRoute.Journal.createRoute(collectionId),
+                                )
                             }
                         }
                     },
                     onNavigateCamera = {
                         bottomBarCollectionId?.let { collectionId ->
-                            navController.navigate(AppRoute.Camera.createRoute(collectionId)) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
-                                launchSingleTop = true
-                                restoreState = true
+                            if (
+                                currentRoute == AppRoute.Camera.route &&
+                                currentRouteCollectionId == collectionId
+                            ) {
+                                return@let
                             }
+                            navigateToCollectionSection(AppRoute.Camera.createRoute(collectionId))
                         }
                     },
                     onNavigateSettings = {
@@ -190,25 +201,32 @@ fun XdwApp(
                                 SettingsSource.Collections
                             }
                         }
+                        if (currentRoute == AppRoute.Settings.route) {
+                            return@MainBottomBar
+                        }
                         navController.navigate(AppRoute.Settings.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
                             launchSingleTop = true
-                            restoreState = true
                         }
                     },
                     onNavigateSearch = {
-                        val targetRoute = bottomBarCollectionId
-                            ?.takeIf { showJournalActions }
-                            ?.let(AppRoute.SearchCollection::createRoute)
-                            ?: AppRoute.SearchGlobal.route
-                        navController.navigate(targetRoute) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
+                        if (showJournalActions) {
+                            val collectionId = bottomBarCollectionId ?: return@MainBottomBar
+                            if (
+                                currentRoute == AppRoute.SearchCollection.route &&
+                                currentRouteCollectionId == collectionId
+                            ) {
+                                return@MainBottomBar
                             }
-                            launchSingleTop = true
-                            restoreState = true
+                            navigateToCollectionSection(
+                                AppRoute.SearchCollection.createRoute(collectionId),
+                            )
+                        } else {
+                            if (currentRoute == AppRoute.SearchGlobal.route) {
+                                return@MainBottomBar
+                            }
+                            navController.navigate(AppRoute.SearchGlobal.route) {
+                                launchSingleTop = true
+                            }
                         }
                     },
                 )
