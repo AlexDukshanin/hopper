@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
@@ -24,6 +25,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -32,6 +34,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -54,6 +58,9 @@ fun SettingsScreen(
     onPhotoQualityChange: (Int) -> Unit,
     onSharePhotoQualityChange: (Int) -> Unit,
 ) {
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    val versionLabel = remember(context) { context.resolveAppVersionLabel() }
     var photoQualitySliderValue by remember(settings.photoQualityJpeg) {
         mutableFloatStateOf(settings.photoQualityJpeg.toFloat())
     }
@@ -350,7 +357,51 @@ fun SettingsScreen(
                 }
             }
         }
+
+        item {
+            ElevatedCard {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = "О приложении",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = versionLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = "Разработчик: AlexDukshanin",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    TextButton(
+                        onClick = { uriHandler.openUri("https://t.me/AlexDukshanin") },
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        ),
+                        contentPadding = PaddingValues(0.dp),
+                    ) {
+                        Text("Telegram: @AlexDukshanin")
+                    }
+                    Text(
+                        text = "GitHub: скоро добавим",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
     }
+}
+
+private fun android.content.Context.resolveAppVersionLabel(): String {
+    val packageInfo = packageManager.getPackageInfo(packageName, 0)
+    val versionName = packageInfo.versionName ?: "0.0.0"
+    val versionCode = packageInfo.longVersionCode
+    return "HOPPER $versionName ($versionCode)"
 }
 
 @Composable
