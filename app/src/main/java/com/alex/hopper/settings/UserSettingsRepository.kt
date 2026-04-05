@@ -26,7 +26,7 @@ enum class CollectionLayoutMode {
 data class AppSettings(
     val themeMode: AppThemeMode = AppThemeMode.HybridClean,
     val appIconMode: AppIconMode = AppIconMode.Yellow,
-    val numberFontSizeSp: Float = 20f,
+    val numberFontSizeSp: Float = 25f,
     val primaryDirectionLabel: String = "ЗАПАД",
     val secondaryDirectionLabel: String = "ВОСТОК",
     val isPrimaryDirectionOnTop: Boolean = true,
@@ -196,7 +196,7 @@ class UserSettingsRepository(
             DEFAULT_SHARE_PHOTO_QUALITY_JPEG,
         ).coerceIn(MIN_PHOTO_QUALITY_JPEG, MAX_PHOTO_QUALITY_JPEG)
 
-        val numberFontSizeSp = preferences.getFloat(KEY_NUMBER_FONT_SIZE, 20f)
+        val numberFontSizeSp = preferences.getFloat(KEY_NUMBER_FONT_SIZE, 25f)
             .coerceIn(MIN_NUMBER_SIZE, MAX_NUMBER_SIZE)
             .roundToInt()
             .toFloat()

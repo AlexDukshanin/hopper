@@ -270,7 +270,7 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Text(
-                                text = "53072740",
+                                text = "30870364",
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontSize = settings.numberFontSizeSp.sp,
                                 ),
