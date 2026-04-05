@@ -23,6 +23,12 @@ enum class CollectionLayoutMode {
     List,
 }
 
+enum class PhotoQualityMode(val jpegQuality: Int) {
+    High(92),
+    Standard(82),
+    Compact(72),
+}
+
 data class AppSettings(
     val themeMode: AppThemeMode = AppThemeMode.HybridClean,
     val appIconMode: AppIconMode = AppIconMode.Yellow,
@@ -35,6 +41,7 @@ data class AppSettings(
     val includeDirectionInCopy: Boolean = true,
     val showPhotosInJournal: Boolean = true,
     val collectionLayoutMode: CollectionLayoutMode = CollectionLayoutMode.Grid,
+    val photoQualityMode: PhotoQualityMode = PhotoQualityMode.Standard,
 ) {
     val topDirectionLabel: String
         get() = if (isPrimaryDirectionOnTop) primaryDirectionLabel else secondaryDirectionLabel
@@ -125,6 +132,13 @@ class UserSettingsRepository(
         _settings.value = loadSettings()
     }
 
+    fun setPhotoQualityMode(mode: PhotoQualityMode) {
+        preferences.edit()
+            .putString(KEY_PHOTO_QUALITY_MODE, mode.name)
+            .apply()
+        _settings.value = loadSettings()
+    }
+
     private fun loadSettings(): AppSettings {
         val themeMode = when (preferences.getString(KEY_THEME_MODE, AppThemeMode.HybridClean.name)) {
             "VercelStyle",
@@ -159,6 +173,13 @@ class UserSettingsRepository(
             CollectionLayoutMode.entries.firstOrNull { it.name == stored }
         } ?: CollectionLayoutMode.Grid
 
+        val photoQualityMode = preferences.getString(
+            KEY_PHOTO_QUALITY_MODE,
+            PhotoQualityMode.Standard.name,
+        )?.let { stored ->
+            PhotoQualityMode.entries.firstOrNull { it.name == stored }
+        } ?: PhotoQualityMode.Standard
+
         val numberFontSizeSp = preferences.getFloat(KEY_NUMBER_FONT_SIZE, 20f)
             .coerceIn(MIN_NUMBER_SIZE, MAX_NUMBER_SIZE)
             .roundToInt()
@@ -178,6 +199,7 @@ class UserSettingsRepository(
             includeDirectionInCopy = preferences.getBoolean(KEY_INCLUDE_DIRECTION_IN_COPY, true),
             showPhotosInJournal = preferences.getBoolean(KEY_SHOW_PHOTOS_IN_JOURNAL, true),
             collectionLayoutMode = collectionLayoutMode,
+            photoQualityMode = photoQualityMode,
         )
     }
 
@@ -194,6 +216,7 @@ class UserSettingsRepository(
         const val KEY_INCLUDE_DIRECTION_IN_COPY = "include_direction_in_copy"
         const val KEY_SHOW_PHOTOS_IN_JOURNAL = "show_photos_in_journal"
         const val KEY_COLLECTION_LAYOUT_MODE = "collection_layout_mode"
+        const val KEY_PHOTO_QUALITY_MODE = "photo_quality_mode"
 
         const val DEFAULT_PRIMARY_LABEL = "ЗАПАД"
         const val DEFAULT_SECONDARY_LABEL = "ВОСТОК"

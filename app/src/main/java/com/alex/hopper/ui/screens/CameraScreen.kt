@@ -84,6 +84,7 @@ fun CameraScreen(
     contentPadding: PaddingValues,
     replaceEntryId: Long?,
     collectionId: Long?,
+    jpegQuality: Int,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -156,6 +157,7 @@ fun CameraScreen(
         errorMessage = cameraState.errorMessage,
         replaceEntryId = replaceEntryId,
         collectionId = collectionId,
+        jpegQuality = jpegQuality,
     )
 }
 
@@ -247,6 +249,7 @@ private fun CameraCaptureState(
     errorMessage: String?,
     replaceEntryId: Long?,
     collectionId: Long?,
+    jpegQuality: Int,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -257,7 +260,7 @@ private fun CameraCaptureState(
     var isCameraBound by remember { mutableStateOf(false) }
     var isPreviewStreaming by remember { mutableStateOf(false) }
 
-    LaunchedEffect(previewView, lifecycleOwner) {
+    LaunchedEffect(previewView, lifecycleOwner, jpegQuality) {
         val currentPreview = previewView ?: return@LaunchedEffect
         imageCapture = null
         bindError = null
@@ -268,6 +271,7 @@ private fun CameraCaptureState(
                 context = context,
                 lifecycleOwner = lifecycleOwner,
                 previewView = currentPreview,
+                jpegQuality = jpegQuality,
             )
         }.onSuccess { boundCamera ->
             cameraProvider = boundCamera.first
@@ -520,11 +524,13 @@ private suspend fun bindCamera(
     context: Context,
     lifecycleOwner: LifecycleOwner,
     previewView: PreviewView,
+    jpegQuality: Int,
 ): Pair<ProcessCameraProvider, ImageCapture> {
     val cameraProvider = ProcessCameraProvider.getInstance(context).await()
     val preview = Preview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }
     val imageCapture = ImageCapture.Builder()
         .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+        .setJpegQuality(jpegQuality)
         .build()
 
     cameraProvider.unbindAll()

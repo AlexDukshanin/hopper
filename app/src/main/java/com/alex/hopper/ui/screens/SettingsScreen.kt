@@ -34,6 +34,7 @@ import com.alex.hopper.settings.AppIconMode
 import com.alex.hopper.settings.AppSettings
 import com.alex.hopper.settings.AppThemeMode
 import com.alex.hopper.settings.NewEntryPosition
+import com.alex.hopper.settings.PhotoQualityMode
 
 @Composable
 fun SettingsScreen(
@@ -44,6 +45,7 @@ fun SettingsScreen(
     onNumberSizeChange: (Float) -> Unit,
     onNewEntryPositionChange: (NewEntryPosition) -> Unit,
     onIncludeDirectionInCopyChange: (Boolean) -> Unit,
+    onPhotoQualityChange: (PhotoQualityMode) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier
@@ -65,6 +67,56 @@ fun SettingsScreen(
                     Text(
                         text = "Выберите оформление и настройте размер номера в карточке.",
                         style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+
+        item {
+            ElevatedCard {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = "Качество фото",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = "Чем ниже качество, тем меньше размер файла. OCR и номер вагона продолжат работать как раньше.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        SelectChipButton(
+                            modifier = Modifier.weight(1f),
+                            text = "Высокое",
+                            selected = settings.photoQualityMode == PhotoQualityMode.High,
+                            onClick = { onPhotoQualityChange(PhotoQualityMode.High) },
+                        )
+                        SelectChipButton(
+                            modifier = Modifier.weight(1f),
+                            text = "Стандарт",
+                            selected = settings.photoQualityMode == PhotoQualityMode.Standard,
+                            onClick = { onPhotoQualityChange(PhotoQualityMode.Standard) },
+                        )
+                        SelectChipButton(
+                            modifier = Modifier.weight(1f),
+                            text = "Эконом",
+                            selected = settings.photoQualityMode == PhotoQualityMode.Compact,
+                            onClick = { onPhotoQualityChange(PhotoQualityMode.Compact) },
+                        )
+                    }
+                    Text(
+                        text = when (settings.photoQualityMode) {
+                            PhotoQualityMode.High -> "JPEG 92: максимум качества, файл обычно крупнее."
+                            PhotoQualityMode.Standard -> "JPEG 82: хороший баланс качества и размера."
+                            PhotoQualityMode.Compact -> "JPEG 72: фото заметно легче, подходит для длинных журналов."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
