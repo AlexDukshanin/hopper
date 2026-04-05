@@ -273,12 +273,12 @@ class CollectionExchangeManager(
 
     companion object {
         const val MIME_TYPE = "application/vnd.com.alex.hopper.collection"
+        const val FILE_EXTENSION = ".hopper"
 
         private const val FORMAT_VERSION = 1
         private const val MANIFEST_NAME = "manifest.json"
         private const val PHOTOS_DIRECTORY = "photos"
         private const val EXPORT_DIRECTORY = "shared_collections"
         private const val IMPORT_DIRECTORY = "imported_collections"
-        private const val FILE_EXTENSION = ".hopper"
     }
 }

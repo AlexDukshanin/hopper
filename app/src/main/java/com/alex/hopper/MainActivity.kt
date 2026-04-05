@@ -3,6 +3,7 @@ package com.alex.hopper
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -57,13 +58,35 @@ class MainActivity : ComponentActivity() {
 
     private fun Intent?.extractImportUri(): Uri? {
         if (this == null) return null
-        val mimeType = type ?: return null
-        if (mimeType != CollectionExchangeManager.MIME_TYPE) return null
-
-        return when (action) {
+        val uri = when (action) {
             Intent.ACTION_VIEW -> data
             Intent.ACTION_SEND -> IntentCompat.getParcelableExtra(this, Intent.EXTRA_STREAM, Uri::class.java)
             else -> null
+        } ?: return null
+
+        val mimeType = type ?: contentResolver.getType(uri)
+        val hasSupportedMimeType = mimeType == CollectionExchangeManager.MIME_TYPE ||
+            mimeType == "application/octet-stream" ||
+            mimeType == "application/zip"
+        val hasSupportedExtension = uri.getImportFileName()
+            ?.endsWith(CollectionExchangeManager.FILE_EXTENSION, ignoreCase = true)
+            ?: false
+
+        return uri.takeIf { hasSupportedMimeType || hasSupportedExtension }
+    }
+
+    private fun Uri.getImportFileName(): String? {
+        if (scheme == "content") {
+            contentResolver.query(this, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (index >= 0) {
+                            return cursor.getString(index)
+                        }
+                    }
+                }
         }
+        return lastPathSegment?.substringAfterLast('/')
     }
 }
