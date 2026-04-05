@@ -22,7 +22,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -44,6 +47,11 @@ import com.alex.hopper.ui.screens.SettingsScreen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+private enum class SettingsSource {
+    Collections,
+    Journal,
+}
+
 @Composable
 fun XdwApp(
     viewModel: MainViewModel,
@@ -57,6 +65,10 @@ fun XdwApp(
     val entries by viewModel.entries.collectAsStateWithLifecycle()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    var settingsSource by rememberSaveable { mutableStateOf(SettingsSource.Collections) }
+    val showJournalActions = currentRoute == AppRoute.Journal.route ||
+        currentRoute == AppRoute.Camera.route ||
+        (currentRoute == AppRoute.Settings.route && settingsSource == SettingsSource.Journal)
     val showBottomBar = currentRoute == AppRoute.Collections.route ||
         currentRoute == AppRoute.Journal.route ||
         currentRoute == AppRoute.Camera.route ||
@@ -126,6 +138,7 @@ fun XdwApp(
                 MainBottomBar(
                     currentRoute = currentRoute,
                     canOpenCamera = selectedCollectionId != null,
+                    showJournalActions = showJournalActions,
                     onNavigateJournal = {
                         selectedCollectionId?.let { collectionId ->
                             navController.navigate(AppRoute.Journal.createRoute(collectionId)) {
@@ -149,6 +162,11 @@ fun XdwApp(
                         }
                     },
                     onNavigateSettings = {
+                        settingsSource = if (currentRoute == AppRoute.Collections.route) {
+                            SettingsSource.Collections
+                        } else {
+                            SettingsSource.Journal
+                        }
                         navController.navigate(AppRoute.Settings.route) {
                             popUpTo(navController.graph.findStartDestination().id) {
                                 saveState = true
@@ -204,12 +222,18 @@ fun XdwApp(
                     settings = settings,
                     contentPadding = contentPadding,
                     onGoHome = {
-                        navController.navigate(AppRoute.Collections.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
+                        val returned = navController.popBackStack(
+                            route = AppRoute.Collections.route,
+                            inclusive = false,
+                        )
+                        if (!returned) {
+                            navController.navigate(AppRoute.Collections.route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
                             }
-                            launchSingleTop = true
-                            restoreState = true
                         }
                     },
                     onOpenCamera = { navController.navigate(AppRoute.Camera.createRoute(collectionId)) },
@@ -324,6 +348,7 @@ fun XdwApp(
 private fun MainBottomBar(
     currentRoute: String?,
     canOpenCamera: Boolean,
+    showJournalActions: Boolean,
     onNavigateJournal: () -> Unit,
     onNavigateCamera: () -> Unit,
     onNavigateSettings: () -> Unit,
@@ -336,14 +361,14 @@ private fun MainBottomBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 18.dp, vertical = 10.dp),
-            horizontalArrangement = if (currentRoute == AppRoute.Collections.route) {
+            horizontalArrangement = if (!showJournalActions) {
                 Arrangement.End
             } else {
                 Arrangement.SpaceBetween
             },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (currentRoute != AppRoute.Collections.route) {
+            if (showJournalActions) {
                 IconButton(onClick = onNavigateJournal) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.ViewList,
