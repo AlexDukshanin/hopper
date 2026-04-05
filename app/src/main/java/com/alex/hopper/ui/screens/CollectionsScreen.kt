@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ViewList
+import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
@@ -62,6 +63,7 @@ fun CollectionsScreen(
     var createDialogVisible by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<CollectionSummary?>(null) }
     var deleteTarget by remember { mutableStateOf<CollectionSummary?>(null) }
+    var helpDialogVisible by remember { mutableStateOf(false) }
     var pendingCreateName by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(pendingCreateName) {
@@ -84,6 +86,7 @@ fun CollectionsScreen(
                 CollectionsHeader(
                     layoutMode = layoutMode,
                     onAskCreate = { createDialogVisible = true },
+                    onShowHelp = { helpDialogVisible = true },
                     onLayoutModeChange = onLayoutModeChange,
                 )
             }
@@ -115,6 +118,7 @@ fun CollectionsScreen(
                 CollectionsHeader(
                     layoutMode = layoutMode,
                     onAskCreate = { createDialogVisible = true },
+                    onShowHelp = { helpDialogVisible = true },
                     onLayoutModeChange = onLayoutModeChange,
                 )
             }
@@ -153,6 +157,12 @@ fun CollectionsScreen(
         )
     }
 
+    if (helpDialogVisible) {
+        CollectionsHelpDialog(
+            onDismiss = { helpDialogVisible = false },
+        )
+    }
+
     renameTarget?.let { collection ->
         CollectionNameDialog(
             title = "Изменить название",
@@ -182,6 +192,7 @@ fun CollectionsScreen(
 private fun CollectionsHeader(
     layoutMode: CollectionLayoutMode,
     onAskCreate: () -> Unit,
+    onShowHelp: () -> Unit,
     onLayoutModeChange: (CollectionLayoutMode) -> Unit,
 ) {
     ElevatedCard {
@@ -212,6 +223,14 @@ private fun CollectionsHeader(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    FilledTonalIconButton(
+                        onClick = onShowHelp,
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.HelpOutline,
+                            contentDescription = "Справка по функциям",
+                        )
+                    }
                     FilledTonalIconButton(
                         onClick = { onLayoutModeChange(CollectionLayoutMode.Grid) },
                     ) {
@@ -253,6 +272,37 @@ private fun CollectionsHeader(
             }
         }
     }
+}
+
+@Composable
+private fun CollectionsHelpDialog(
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Что умеет HOPPER") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text("1. Создайте подборку для пути, смены или отдельного журнала.")
+                Text("2. Внутри подборки снимайте вагоны, распознавайте номера и правьте их вручную.")
+                Text("3. Меняйте порядок карточек, ставьте ПР или ГР, добавляйте заметки и описания.")
+                Text("4. Ищите по подборкам и вагонам, копируйте списки и отправляйте их в мессенджеры.")
+                Text("5. Экспортируйте подборки в Hopper-файл с фото или без фото и открывайте их на другом устройстве.")
+                Text(
+                    text = "Ссылки на Telegram и GitHub лежат в настройках в блоке «О приложении».",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Понятно")
+            }
+        },
+    )
 }
 
 @Composable

@@ -386,11 +386,15 @@ fun SettingsScreen(
                     ) {
                         Text("Telegram: @AlexDukshanin")
                     }
-                    Text(
-                        text = "GitHub: скоро добавим",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    TextButton(
+                        onClick = { uriHandler.openUri("https://github.com/AlexDukshanin/hopper") },
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        ),
+                        contentPadding = PaddingValues(0.dp),
+                    ) {
+                        Text("GitHub: AlexDukshanin/hopper")
+                    }
                 }
             }
         }
