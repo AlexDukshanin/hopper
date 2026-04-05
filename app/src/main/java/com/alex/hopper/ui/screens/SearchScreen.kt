@@ -2,6 +2,7 @@ package com.alex.hopper.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -10,9 +11,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -58,6 +61,16 @@ fun SearchScreen(
     var query by rememberSaveable { mutableStateOf("") }
     val trimmedQuery = query.trim()
     val collectionsById = remember(collections) { collections.associateBy { it.id } }
+    val entryOrdersById = remember(entries) {
+        entries
+            .groupBy { it.collectionId }
+            .flatMap { (_, collectionEntries) ->
+                collectionEntries
+                    .sortedBy { it.positionIndex }
+                    .mapIndexed { index, entry -> entry.id to (index + 1) }
+            }
+            .toMap()
+    }
     val matchingCollections = remember(trimmedQuery, isGlobalSearch, collections) {
         if (!isGlobalSearch || trimmedQuery.isBlank()) {
             emptyList()
@@ -185,6 +198,7 @@ fun SearchScreen(
                 items(matchingEntries, key = { it.id }) { entry ->
                     SearchEntryCard(
                         entry = entry,
+                        order = entryOrdersById[entry.id],
                         collectionName = collectionsById[entry.collectionId]?.name,
                         showCollectionName = isGlobalSearch,
                         onClick = { onOpenEntry(entry) },
@@ -300,6 +314,7 @@ private fun SearchCollectionCard(
 @Composable
 private fun SearchEntryCard(
     entry: WagonEntry,
+    order: Int?,
     collectionName: String?,
     showCollectionName: Boolean,
     onClick: () -> Unit,
@@ -314,16 +329,35 @@ private fun SearchEntryCard(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                order?.let {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                    ) {
+                        Box(
+                            modifier = Modifier.size(30.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = it.toString(),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                        }
+                    }
+                }
                 Text(
+                    modifier = Modifier.weight(1f),
                     text = entry.primaryNumber ?: "Номер не найден",
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontFamily = FontFamily.Monospace,
                     ),
                     maxLines = 1,
+                    softWrap = false,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(modifier = Modifier.width(10.dp))
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
                     shape = RoundedCornerShape(999.dp),
