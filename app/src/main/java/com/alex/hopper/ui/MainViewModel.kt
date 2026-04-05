@@ -141,6 +141,16 @@ class MainViewModel(
 
     fun observeEntry(id: Long): Flow<WagonEntry?> = repository.observeEntry(id)
 
+    fun observeCollection(collectionId: Long): Flow<WagonCollection?> =
+        repository.observeCollection(collectionId)
+
+    fun observeEntries(collectionId: Long): Flow<List<WagonEntry>> = combine(
+        repository.observeEntries(collectionId),
+        pendingDeleteEntry,
+    ) { items, pending ->
+        items.filterNot { it.id == pending?.id }
+    }
+
     fun createCaptureFile(): File = repository.createCaptureFile()
 
     fun selectCollection(collectionId: Long) {

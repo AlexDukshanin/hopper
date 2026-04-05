@@ -62,9 +62,7 @@ fun XdwApp(
     val navController = rememberNavController()
     val snackbarHostState = remember { SnackbarHostState() }
     val collections by viewModel.collections.collectAsStateWithLifecycle()
-    val currentCollection by viewModel.currentCollection.collectAsStateWithLifecycle()
     val selectedCollectionId by viewModel.selectedCollectionId.collectAsStateWithLifecycle()
-    val entries by viewModel.entries.collectAsStateWithLifecycle()
     val allEntries by viewModel.allEntries.collectAsStateWithLifecycle()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -249,14 +247,22 @@ fun XdwApp(
                 val collectionId = backStackEntry.arguments?.getLong(AppRoute.Journal.collectionIdArg)
                     ?: return@composable
 
+                val collectionFlow = remember(collectionId) {
+                    viewModel.observeCollection(collectionId)
+                }
+                val entriesFlow = remember(collectionId) {
+                    viewModel.observeEntries(collectionId)
+                }
+                val routeCollection by collectionFlow.collectAsStateWithLifecycle(initialValue = null)
+                val routeEntries by entriesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+
                 LaunchedEffect(collectionId) {
                     viewModel.selectCollection(collectionId)
                 }
 
-                val activeCollection = currentCollection?.takeIf { it.id == collectionId }
                 JournalScreen(
-                    collection = activeCollection,
-                    entries = if (activeCollection != null) entries else emptyList(),
+                    collection = routeCollection,
+                    entries = routeEntries,
                     settings = settings,
                     contentPadding = contentPadding,
                     onGoHome = {
@@ -345,6 +351,15 @@ fun XdwApp(
                 val collectionId = backStackEntry.arguments?.getLong(AppRoute.SearchCollection.collectionIdArg)
                     ?: return@composable
 
+                val collectionFlow = remember(collectionId) {
+                    viewModel.observeCollection(collectionId)
+                }
+                val entriesFlow = remember(collectionId) {
+                    viewModel.observeEntries(collectionId)
+                }
+                val routeCollection by collectionFlow.collectAsStateWithLifecycle(initialValue = null)
+                val routeEntries by entriesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+
                 LaunchedEffect(collectionId) {
                     viewModel.selectCollection(collectionId)
                 }
@@ -352,8 +367,8 @@ fun XdwApp(
                 SearchScreen(
                     isGlobalSearch = false,
                     collections = collections,
-                    entries = if (currentCollection?.id == collectionId) entries else emptyList(),
-                    currentCollection = currentCollection?.takeIf { it.id == collectionId },
+                    entries = routeEntries,
+                    currentCollection = routeCollection,
                     contentPadding = contentPadding,
                     onBack = { navController.popBackStack() },
                     onOpenCollection = { targetCollectionId ->
