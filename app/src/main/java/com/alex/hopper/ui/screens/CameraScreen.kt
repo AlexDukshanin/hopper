@@ -45,6 +45,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -58,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.alex.hopper.ui.MainViewModel
@@ -80,14 +83,34 @@ fun CameraScreen(
     collectionId: Long?,
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val cameraState by viewModel.cameraState.collectAsStateWithLifecycle()
     var hasPermission by remember {
         mutableStateOf(context.hasCameraPermission())
     }
+    var cameraSessionKey by remember { mutableIntStateOf(0) }
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
         hasPermission = granted
+        if (granted) {
+            cameraSessionKey += 1
+        }
+    }
+
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                val granted = context.hasCameraPermission()
+                if (granted != hasPermission) {
+                    hasPermission = granted
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
     DisposableEffect(Unit) {
@@ -106,15 +129,17 @@ fun CameraScreen(
         return
     }
 
-    CameraCaptureState(
-        viewModel = viewModel,
-        contentPadding = contentPadding,
-        statusMessage = cameraState.statusMessage,
-        isProcessing = cameraState.isProcessing,
-        errorMessage = cameraState.errorMessage,
-        replaceEntryId = replaceEntryId,
-        collectionId = collectionId,
-    )
+    key(cameraSessionKey, replaceEntryId, collectionId) {
+        CameraCaptureState(
+            viewModel = viewModel,
+            contentPadding = contentPadding,
+            statusMessage = cameraState.statusMessage,
+            isProcessing = cameraState.isProcessing,
+            errorMessage = cameraState.errorMessage,
+            replaceEntryId = replaceEntryId,
+            collectionId = collectionId,
+        )
+    }
 }
 
 @Composable
@@ -211,6 +236,7 @@ private fun CameraCaptureState(
             factory = { viewContext ->
                 PreviewView(viewContext).apply {
                     scaleType = PreviewView.ScaleType.FILL_CENTER
+                    implementationMode = PreviewView.ImplementationMode.COMPATIBLE
                 }.also { previewView = it }
             },
             modifier = Modifier.fillMaxSize(),

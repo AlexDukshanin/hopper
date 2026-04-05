@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -37,7 +38,6 @@ data class CameraUiState(
 
 sealed interface AppEvent {
     data class OpenEntry(val entryId: Long) : AppEvent
-    data class OpenCollection(val collectionId: Long) : AppEvent
     data class Snackbar(
         val message: String,
         val durationMillis: Long = 2_000,
@@ -73,6 +73,15 @@ class MainViewModel(
         )
 
     val allEntries: StateFlow<List<WagonEntry>> = repository.observeAllEntries()
+        .catch {
+            _events.emit(
+                AppEvent.Snackbar(
+                    message = "Не удалось открыть глобальный поиск",
+                    durationMillis = 1_400,
+                ),
+            )
+            emit(emptyList())
+        }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
@@ -142,7 +151,6 @@ class MainViewModel(
         viewModelScope.launch {
             val collectionId = repository.createCollection(name)
             _selectedCollectionId.value = collectionId
-            _events.emit(AppEvent.OpenCollection(collectionId))
             _events.emit(AppEvent.Snackbar("Подборка создана", durationMillis = 1_000))
         }
     }

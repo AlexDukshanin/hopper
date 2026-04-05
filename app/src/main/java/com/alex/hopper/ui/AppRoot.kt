@@ -83,10 +83,6 @@ fun XdwApp(
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
-                is AppEvent.OpenCollection -> {
-                    navController.navigate(AppRoute.Journal.createRoute(event.collectionId))
-                }
-
                 is AppEvent.OpenEntry -> {
                     navController.navigate(AppRoute.Detail.createRoute(event.entryId))
                 }
@@ -147,12 +143,19 @@ fun XdwApp(
                     showJournalActions = showJournalActions,
                     onNavigateJournal = {
                         selectedCollectionId?.let { collectionId ->
-                            navController.navigate(AppRoute.Journal.createRoute(collectionId)) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+                            val targetRoute = AppRoute.Journal.createRoute(collectionId)
+                            val returned = navController.popBackStack(
+                                route = targetRoute,
+                                inclusive = false,
+                            )
+                            if (!returned) {
+                                navController.navigate(targetRoute) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
                             }
                         }
                     },
