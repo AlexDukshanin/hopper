@@ -35,6 +35,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +62,13 @@ fun CollectionsScreen(
     var createDialogVisible by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<CollectionSummary?>(null) }
     var deleteTarget by remember { mutableStateOf<CollectionSummary?>(null) }
+    var pendingCreateName by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(pendingCreateName) {
+        val createName = pendingCreateName ?: return@LaunchedEffect
+        pendingCreateName = null
+        onCreateCollection(createName)
+    }
 
     if (layoutMode == CollectionLayoutMode.Grid) {
         LazyVerticalGrid(
@@ -139,8 +147,8 @@ fun CollectionsScreen(
             confirmText = "Создать",
             onDismiss = { createDialogVisible = false },
             onConfirm = { value ->
-                onCreateCollection(value)
                 createDialogVisible = false
+                pendingCreateName = value
             },
         )
     }

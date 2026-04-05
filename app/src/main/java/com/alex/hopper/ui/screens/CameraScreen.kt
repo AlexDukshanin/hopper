@@ -102,8 +102,9 @@ fun CameraScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 val granted = context.hasCameraPermission()
-                if (granted != hasPermission) {
-                    hasPermission = granted
+                hasPermission = granted
+                if (granted) {
+                    cameraSessionKey += 1
                 }
             }
         }
@@ -203,8 +204,9 @@ private fun CameraCaptureState(
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var bindError by remember { mutableStateOf<String?>(null) }
+    var bindRequestKey by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(previewView, lifecycleOwner) {
+    LaunchedEffect(previewView, lifecycleOwner, bindRequestKey) {
         val currentPreview = previewView ?: return@LaunchedEffect
         runCatching {
             bindCamera(
@@ -218,6 +220,18 @@ private fun CameraCaptureState(
             bindError = null
         }.onFailure { exception ->
             bindError = exception.message ?: "Не удалось запустить камеру."
+        }
+    }
+
+    DisposableEffect(lifecycleOwner, previewView) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && previewView != null) {
+                bindRequestKey += 1
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 

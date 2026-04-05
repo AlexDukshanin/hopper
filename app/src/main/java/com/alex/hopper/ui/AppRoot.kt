@@ -73,6 +73,9 @@ fun XdwApp(
         currentRoute == AppRoute.Camera.route ||
         currentRoute == AppRoute.SearchCollection.route ||
         (currentRoute == AppRoute.Settings.route && settingsSource == SettingsSource.Journal)
+    val showSearchAction = currentRoute == AppRoute.SearchGlobal.route ||
+        currentRoute == AppRoute.SearchCollection.route ||
+        showJournalActions
     val showBottomBar = currentRoute == AppRoute.Collections.route ||
         currentRoute == AppRoute.Journal.route ||
         currentRoute == AppRoute.Camera.route ||
@@ -141,14 +144,15 @@ fun XdwApp(
                     currentRoute = currentRoute,
                     canOpenCamera = selectedCollectionId != null,
                     showJournalActions = showJournalActions,
+                    showSearchAction = showSearchAction,
                     onNavigateJournal = {
                         selectedCollectionId?.let { collectionId ->
-                            val targetRoute = AppRoute.Journal.createRoute(collectionId)
-                            val returned = navController.popBackStack(
-                                route = targetRoute,
-                                inclusive = false,
-                            )
-                            if (!returned) {
+                            val cameFromJournal = currentRoute == AppRoute.Camera.route &&
+                                navController.previousBackStackEntry?.destination?.route == AppRoute.Journal.route
+                            if (cameFromJournal) {
+                                navController.popBackStack()
+                            } else {
+                                val targetRoute = AppRoute.Journal.createRoute(collectionId)
                                 navController.navigate(targetRoute) {
                                     popUpTo(navController.graph.findStartDestination().id) {
                                         saveState = true
@@ -425,6 +429,7 @@ private fun MainBottomBar(
     currentRoute: String?,
     canOpenCamera: Boolean,
     showJournalActions: Boolean,
+    showSearchAction: Boolean,
     onNavigateJournal: () -> Unit,
     onNavigateCamera: () -> Unit,
     onNavigateSettings: () -> Unit,
@@ -470,19 +475,21 @@ private fun MainBottomBar(
                 }
             }
 
-            IconButton(onClick = onNavigateSearch) {
-                Icon(
-                    imageVector = Icons.Rounded.Search,
-                    contentDescription = "Поиск",
-                    tint = if (
-                        currentRoute == AppRoute.SearchGlobal.route ||
-                        currentRoute == AppRoute.SearchCollection.route
-                    ) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
+            if (showSearchAction) {
+                IconButton(onClick = onNavigateSearch) {
+                    Icon(
+                        imageVector = Icons.Rounded.Search,
+                        contentDescription = "Поиск",
+                        tint = if (
+                            currentRoute == AppRoute.SearchGlobal.route ||
+                            currentRoute == AppRoute.SearchCollection.route
+                        ) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
             }
 
             IconButton(onClick = onNavigateSettings) {
