@@ -1,15 +1,18 @@
 # HOPPER
 
-HOPPER is an Android app for photographing rail wagons, recognizing wagon numbers from photos, and organizing them into collections with notes, direction labels, and export options.
+HOPPER is an Android app for railway wagon accounting. It helps photograph wagons, recognize wagon numbers from photos, organize them into collections, add notes, and share full journals with or without images.
 
-## What the app does
+## Main features
 
-- Creates separate collections for different tracks, tasks, or shifts
-- Takes wagon photos directly inside the app
-- Recognizes wagon numbers with OCR
-- Stores wagon order, notes, states (`PR` / `GR`), and journal descriptions
-- Lets you copy, share, and import full Hopper collections with or without photos
-- Supports manual card reordering, search, themes, and photo compression settings
+- Create separate collections for tracks, shifts, or work sessions
+- Capture wagon photos directly inside the app
+- Recognize wagon numbers with OCR
+- Store wagon order, notes, directions, and wagon states (`PR` / `GR`)
+- Reorder cards manually and keep a fixed journal order
+- Search by collection name, journal description, wagon number, and notes
+- Share wagon lists as text
+- Export and import full Hopper collections with or without photos
+- Adjust photo compression, theme, icon, and card appearance
 
 ## Built with
 
@@ -20,33 +23,48 @@ HOPPER is an Android app for photographing rail wagons, recognizing wagon number
 - Room
 - Coil
 
-## Current package
+## Package
 
 - `com.alex.hopper`
 
-## Build
+## Download
 
-Debug APK:
+Latest APK release:
+
+- [HOPPER APK v0.1.0](https://github.com/AlexDukshanin/hopper/releases/tag/apk-v0.1.0)
+
+Included file:
+
+- `HOPPER-universal-debug.apk`
+
+Installation notes:
+
+- This is a universal debug APK and it can be installed directly on Android devices
+- If Android blocks installation, allow installs from the browser or file manager you used to download the APK
+- A signed release APK can be added later when a release keystore is configured
+
+## Build locally
+
+Build debug APK:
 
 ```bash
 ./gradlew assembleDebug
 ```
 
-Generated APK:
+Build release APK:
+
+```bash
+./gradlew assembleRelease
+```
+
+Generated files:
 
 - `app/build/outputs/apk/debug/app-debug.apk`
+- `app/build/outputs/apk/release/app-release-unsigned.apk`
 
-## Download APK
+## Release notes
 
-Ready-to-install APK in this repository:
-
-- `downloads/HOPPER-universal-debug.apk`
-
-Notes:
-
-- This is a universal debug build that can be downloaded and installed directly
-- If Android blocks installation, allow install from the browser or file manager
-- A signed release APK can be added later when a release keystore is prepared
+- [apk-v0.1.0 notes](docs/release-notes/apk-v0.1.0.md)
 
 ## Developer
 
