@@ -174,11 +174,6 @@ fun JournalScreen(
                             )
                         }
                     }
-                    Text(
-                        text = "Список и описание относятся только к этой подборке.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -215,7 +210,7 @@ fun JournalScreen(
                         minLines = 3,
                         maxLines = 3,
                         shape = RoundedCornerShape(18.dp),
-                        label = { Text("Описание подборки") },
+                        label = { Text("Описание журнала") },
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),

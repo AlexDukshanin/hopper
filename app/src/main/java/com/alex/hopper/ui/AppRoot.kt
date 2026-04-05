@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.FilledTonalIconButton
@@ -126,13 +126,15 @@ fun XdwApp(
                 MainBottomBar(
                     currentRoute = currentRoute,
                     canOpenCamera = selectedCollectionId != null,
-                    onNavigateHome = {
-                        navController.navigate(AppRoute.Collections.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
+                    onNavigateJournal = {
+                        selectedCollectionId?.let { collectionId ->
+                            navController.navigate(AppRoute.Journal.createRoute(collectionId)) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
                             }
-                            launchSingleTop = true
-                            restoreState = true
                         }
                     },
                     onNavigateCamera = {
@@ -322,7 +324,7 @@ fun XdwApp(
 private fun MainBottomBar(
     currentRoute: String?,
     canOpenCamera: Boolean,
-    onNavigateHome: () -> Unit,
+    onNavigateJournal: () -> Unit,
     onNavigateCamera: () -> Unit,
     onNavigateSettings: () -> Unit,
 ) {
@@ -334,30 +336,36 @@ private fun MainBottomBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 18.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = if (currentRoute == AppRoute.Collections.route) {
+                Arrangement.End
+            } else {
+                Arrangement.SpaceBetween
+            },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onNavigateHome) {
-                Icon(
-                    imageVector = Icons.Rounded.Home,
-                    contentDescription = "Подборки",
-                    tint = if (currentRoute == AppRoute.Collections.route) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
+            if (currentRoute != AppRoute.Collections.route) {
+                IconButton(onClick = onNavigateJournal) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ViewList,
+                        contentDescription = "Журнал",
+                        tint = if (currentRoute == AppRoute.Journal.route) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
 
-            FilledTonalIconButton(
-                onClick = onNavigateCamera,
-                enabled = canOpenCamera,
-                modifier = Modifier.size(58.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.PhotoCamera,
-                    contentDescription = "Съемка",
-                )
+                FilledTonalIconButton(
+                    onClick = onNavigateCamera,
+                    enabled = canOpenCamera,
+                    modifier = Modifier.size(58.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.PhotoCamera,
+                        contentDescription = "Съемка",
+                    )
+                }
             }
 
             IconButton(onClick = onNavigateSettings) {
