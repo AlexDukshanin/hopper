@@ -23,12 +23,6 @@ enum class CollectionLayoutMode {
     List,
 }
 
-enum class PhotoQualityMode(val jpegQuality: Int) {
-    High(92),
-    Standard(82),
-    Compact(72),
-}
-
 data class AppSettings(
     val themeMode: AppThemeMode = AppThemeMode.HybridClean,
     val appIconMode: AppIconMode = AppIconMode.Yellow,
@@ -41,7 +35,7 @@ data class AppSettings(
     val includeDirectionInCopy: Boolean = true,
     val showPhotosInJournal: Boolean = true,
     val collectionLayoutMode: CollectionLayoutMode = CollectionLayoutMode.Grid,
-    val photoQualityMode: PhotoQualityMode = PhotoQualityMode.Standard,
+    val photoQualityJpeg: Int = 92,
 ) {
     val topDirectionLabel: String
         get() = if (isPrimaryDirectionOnTop) primaryDirectionLabel else secondaryDirectionLabel
@@ -132,9 +126,9 @@ class UserSettingsRepository(
         _settings.value = loadSettings()
     }
 
-    fun setPhotoQualityMode(mode: PhotoQualityMode) {
+    fun setPhotoQualityJpeg(quality: Int) {
         preferences.edit()
-            .putString(KEY_PHOTO_QUALITY_MODE, mode.name)
+            .putInt(KEY_PHOTO_QUALITY_JPEG, quality.coerceIn(MIN_PHOTO_QUALITY_JPEG, MAX_PHOTO_QUALITY_JPEG))
             .apply()
         _settings.value = loadSettings()
     }
@@ -173,12 +167,18 @@ class UserSettingsRepository(
             CollectionLayoutMode.entries.firstOrNull { it.name == stored }
         } ?: CollectionLayoutMode.Grid
 
-        val photoQualityMode = preferences.getString(
-            KEY_PHOTO_QUALITY_MODE,
-            PhotoQualityMode.Standard.name,
-        )?.let { stored ->
-            PhotoQualityMode.entries.firstOrNull { it.name == stored }
-        } ?: PhotoQualityMode.Standard
+        val photoQualityJpeg = when {
+            preferences.contains(KEY_PHOTO_QUALITY_JPEG) -> {
+                preferences.getInt(KEY_PHOTO_QUALITY_JPEG, DEFAULT_PHOTO_QUALITY_JPEG)
+                    .coerceIn(MIN_PHOTO_QUALITY_JPEG, MAX_PHOTO_QUALITY_JPEG)
+            }
+            else -> when (preferences.getString(KEY_PHOTO_QUALITY_MODE, null)) {
+                "High" -> 92
+                "Standard" -> 82
+                "Compact" -> 72
+                else -> DEFAULT_PHOTO_QUALITY_JPEG
+            }
+        }
 
         val numberFontSizeSp = preferences.getFloat(KEY_NUMBER_FONT_SIZE, 20f)
             .coerceIn(MIN_NUMBER_SIZE, MAX_NUMBER_SIZE)
@@ -199,7 +199,7 @@ class UserSettingsRepository(
             includeDirectionInCopy = preferences.getBoolean(KEY_INCLUDE_DIRECTION_IN_COPY, true),
             showPhotosInJournal = preferences.getBoolean(KEY_SHOW_PHOTOS_IN_JOURNAL, true),
             collectionLayoutMode = collectionLayoutMode,
-            photoQualityMode = photoQualityMode,
+            photoQualityJpeg = photoQualityJpeg,
         )
     }
 
@@ -217,10 +217,14 @@ class UserSettingsRepository(
         const val KEY_SHOW_PHOTOS_IN_JOURNAL = "show_photos_in_journal"
         const val KEY_COLLECTION_LAYOUT_MODE = "collection_layout_mode"
         const val KEY_PHOTO_QUALITY_MODE = "photo_quality_mode"
+        const val KEY_PHOTO_QUALITY_JPEG = "photo_quality_jpeg"
 
         const val DEFAULT_PRIMARY_LABEL = "ЗАПАД"
         const val DEFAULT_SECONDARY_LABEL = "ВОСТОК"
         const val MIN_NUMBER_SIZE = 18f
         const val MAX_NUMBER_SIZE = 27f
+        const val MIN_PHOTO_QUALITY_JPEG = 60
+        const val MAX_PHOTO_QUALITY_JPEG = 92
+        const val DEFAULT_PHOTO_QUALITY_JPEG = 92
     }
 }

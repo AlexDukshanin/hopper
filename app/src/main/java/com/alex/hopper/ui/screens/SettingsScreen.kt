@@ -25,6 +25,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -36,7 +40,7 @@ import com.alex.hopper.settings.AppIconMode
 import com.alex.hopper.settings.AppSettings
 import com.alex.hopper.settings.AppThemeMode
 import com.alex.hopper.settings.NewEntryPosition
-import com.alex.hopper.settings.PhotoQualityMode
+import kotlin.math.roundToInt
 
 @Composable
 fun SettingsScreen(
@@ -47,8 +51,13 @@ fun SettingsScreen(
     onNumberSizeChange: (Float) -> Unit,
     onNewEntryPositionChange: (NewEntryPosition) -> Unit,
     onIncludeDirectionInCopyChange: (Boolean) -> Unit,
-    onPhotoQualityChange: (PhotoQualityMode) -> Unit,
+    onPhotoQualityChange: (Int) -> Unit,
 ) {
+    var photoQualitySliderValue by remember(settings.photoQualityJpeg) {
+        mutableFloatStateOf(settings.photoQualityJpeg.toFloat())
+    }
+    val currentPhotoQuality = photoQualitySliderValue.roundToInt().coerceIn(60, 92)
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -79,7 +88,7 @@ fun SettingsScreen(
             ElevatedCard {
                 Column(
                     modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     Text(
                         text = "Качество фото",
@@ -90,37 +99,68 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ),
                     ) {
-                        SelectChipButton(
-                            modifier = Modifier.weight(1f),
-                            text = "Высокое",
-                            selected = settings.photoQualityMode == PhotoQualityMode.High,
-                            onClick = { onPhotoQualityChange(PhotoQualityMode.High) },
-                        )
-                        SelectChipButton(
-                            modifier = Modifier.weight(1f),
-                            text = "Стандарт",
-                            selected = settings.photoQualityMode == PhotoQualityMode.Standard,
-                            onClick = { onPhotoQualityChange(PhotoQualityMode.Standard) },
-                        )
-                        SelectChipButton(
-                            modifier = Modifier.weight(1f),
-                            text = "Эконом",
-                            selected = settings.photoQualityMode == PhotoQualityMode.Compact,
-                            onClick = { onPhotoQualityChange(PhotoQualityMode.Compact) },
-                        )
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    Text(
+                                        text = "JPEG $currentPhotoQuality",
+                                        style = MaterialTheme.typography.titleLarge,
+                                    )
+                                    Text(
+                                        text = describePhotoQuality(currentPhotoQuality),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Text(
+                                    text = "${estimatePhotoRange(currentPhotoQuality)} МБ",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                            Slider(
+                                value = photoQualitySliderValue,
+                                onValueChange = { photoQualitySliderValue = it },
+                                onValueChangeFinished = {
+                                    if (currentPhotoQuality != settings.photoQualityJpeg) {
+                                        onPhotoQualityChange(currentPhotoQuality)
+                                    }
+                                },
+                                valueRange = 60f..92f,
+                                steps = 31,
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = "Очень низкое 60",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    text = "Высокое 92",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                     }
-                    Text(
-                        text = when (settings.photoQualityMode) {
-                            PhotoQualityMode.High -> "JPEG 92: максимум качества, файл обычно крупнее."
-                            PhotoQualityMode.Standard -> "JPEG 82: хороший баланс качества и размера."
-                            PhotoQualityMode.Compact -> "JPEG 72: фото заметно легче, подходит для длинных журналов."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
             }
         }
@@ -343,6 +383,28 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+}
+
+private fun describePhotoQuality(jpegQuality: Int): String {
+    return when {
+        jpegQuality <= 64 -> "Максимальное сжатие, самый легкий файл"
+        jpegQuality <= 70 -> "Очень низкое качество, но журнал занимает меньше места"
+        jpegQuality <= 76 -> "Низкое качество для длинных смен и больших архивов"
+        jpegQuality <= 82 -> "Умеренное качество, хороший баланс размера"
+        jpegQuality <= 88 -> "Хорошее качество с умеренным сжатием"
+        else -> "Почти без потерь, файл будет крупнее"
+    }
+}
+
+private fun estimatePhotoRange(jpegQuality: Int): String {
+    return when {
+        jpegQuality <= 64 -> "0.8-1.4"
+        jpegQuality <= 70 -> "1.1-1.9"
+        jpegQuality <= 76 -> "1.5-2.4"
+        jpegQuality <= 82 -> "1.9-3.0"
+        jpegQuality <= 88 -> "2.4-4.0"
+        else -> "3.0-5.0"
     }
 }
 

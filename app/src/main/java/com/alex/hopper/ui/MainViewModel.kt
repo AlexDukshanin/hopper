@@ -16,7 +16,6 @@ import com.alex.hopper.settings.AppSettings
 import com.alex.hopper.settings.AppThemeMode
 import com.alex.hopper.settings.CollectionLayoutMode
 import com.alex.hopper.settings.NewEntryPosition
-import com.alex.hopper.settings.PhotoQualityMode
 import com.alex.hopper.settings.UserSettingsRepository
 import java.io.File
 import kotlinx.coroutines.flow.Flow
@@ -377,9 +376,9 @@ class MainViewModel(
         settingsRepository.setShowPhotosInJournal(show)
     }
 
-    fun setPhotoQualityMode(mode: PhotoQualityMode) {
-        settingsRepository.setPhotoQualityMode(mode)
-        showSnackbar("Качество фото обновлено", durationMillis = 1_000)
+    fun setPhotoQualityJpeg(quality: Int) {
+        settingsRepository.setPhotoQualityJpeg(quality)
+        showSnackbar("Качество фото: JPEG $quality", durationMillis = 1_000)
     }
 
     fun shareCollectionFile(

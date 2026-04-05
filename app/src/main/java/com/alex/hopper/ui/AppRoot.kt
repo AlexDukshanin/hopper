@@ -372,7 +372,7 @@ fun XdwApp(
                     contentPadding = contentPadding,
                     replaceEntryId = null,
                     collectionId = collectionId,
-                    jpegQuality = settings.photoQualityMode.jpegQuality,
+                    jpegQuality = settings.photoQualityJpeg,
                 )
             }
 
@@ -451,7 +451,7 @@ fun XdwApp(
                     contentPadding = contentPadding,
                     replaceEntryId = entryId,
                     collectionId = null,
-                    jpegQuality = settings.photoQualityMode.jpegQuality,
+                    jpegQuality = settings.photoQualityJpeg,
                 )
             }
 
@@ -464,7 +464,7 @@ fun XdwApp(
                     onNumberSizeChange = viewModel::setNumberFontSize,
                     onNewEntryPositionChange = viewModel::setNewEntryPosition,
                     onIncludeDirectionInCopyChange = viewModel::setIncludeDirectionInCopy,
-                    onPhotoQualityChange = viewModel::setPhotoQualityMode,
+                    onPhotoQualityChange = viewModel::setPhotoQualityJpeg,
                 )
             }
 
