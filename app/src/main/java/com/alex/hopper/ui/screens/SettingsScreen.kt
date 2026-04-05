@@ -28,6 +28,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.alex.hopper.settings.AppIconMode
@@ -398,9 +400,16 @@ private fun SelectChipButton(
     FilledTonalButton(
         modifier = modifier,
         onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
     ) {
         Text(
+            modifier = Modifier.fillMaxWidth(),
             text = text,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.labelMedium,
             color = if (selected) {
                 MaterialTheme.colorScheme.primary
             } else {
