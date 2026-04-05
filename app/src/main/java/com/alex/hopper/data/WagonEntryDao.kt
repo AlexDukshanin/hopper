@@ -8,6 +8,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface WagonEntryDao {
+    @Query("SELECT * FROM wagon_entries ORDER BY createdAt DESC")
+    fun observeAllEntries(): Flow<List<WagonEntry>>
+
     @Query("SELECT * FROM wagon_entries WHERE collectionId = :collectionId ORDER BY positionIndex ASC")
     fun observeEntries(collectionId: Long): Flow<List<WagonEntry>>
 

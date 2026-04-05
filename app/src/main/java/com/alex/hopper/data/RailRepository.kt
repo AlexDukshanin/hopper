@@ -21,6 +21,8 @@ class RailRepository(
 
     fun observeCollection(id: Long): Flow<WagonCollection?> = collectionDao.observeCollection(id)
 
+    fun observeAllEntries(): Flow<List<WagonEntry>> = wagonEntryDao.observeAllEntries()
+
     fun observeEntries(collectionId: Long): Flow<List<WagonEntry>> = wagonEntryDao.observeEntries(collectionId)
 
     fun observeEntry(id: Long): Flow<WagonEntry?> = wagonEntryDao.observeEntry(id)

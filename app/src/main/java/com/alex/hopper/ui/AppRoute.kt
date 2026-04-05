@@ -15,6 +15,14 @@ sealed class AppRoute(val route: String) {
         fun createRoute(collectionId: Long): String = "camera/$collectionId"
     }
 
+    data object SearchGlobal : AppRoute("search/global")
+
+    data object SearchCollection : AppRoute("search/collection/{collectionId}") {
+        const val collectionIdArg = "collectionId"
+
+        fun createRoute(collectionId: Long): String = "search/collection/$collectionId"
+    }
+
     data object Settings : AppRoute("settings")
 
     data object ReplacePhoto : AppRoute("camera/replace/{entryId}") {

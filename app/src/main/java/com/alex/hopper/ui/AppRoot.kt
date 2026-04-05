@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -43,6 +44,7 @@ import com.alex.hopper.ui.screens.CollectionsScreen
 import com.alex.hopper.ui.screens.EntryDetailScreen
 import com.alex.hopper.ui.screens.JournalScreen
 import com.alex.hopper.ui.screens.PhotoScreen
+import com.alex.hopper.ui.screens.SearchScreen
 import com.alex.hopper.ui.screens.SettingsScreen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -63,15 +65,19 @@ fun XdwApp(
     val currentCollection by viewModel.currentCollection.collectAsStateWithLifecycle()
     val selectedCollectionId by viewModel.selectedCollectionId.collectAsStateWithLifecycle()
     val entries by viewModel.entries.collectAsStateWithLifecycle()
+    val allEntries by viewModel.allEntries.collectAsStateWithLifecycle()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     var settingsSource by rememberSaveable { mutableStateOf(SettingsSource.Collections) }
     val showJournalActions = currentRoute == AppRoute.Journal.route ||
         currentRoute == AppRoute.Camera.route ||
+        currentRoute == AppRoute.SearchCollection.route ||
         (currentRoute == AppRoute.Settings.route && settingsSource == SettingsSource.Journal)
     val showBottomBar = currentRoute == AppRoute.Collections.route ||
         currentRoute == AppRoute.Journal.route ||
         currentRoute == AppRoute.Camera.route ||
+        currentRoute == AppRoute.SearchGlobal.route ||
+        currentRoute == AppRoute.SearchCollection.route ||
         currentRoute == AppRoute.Settings.route
 
     LaunchedEffect(viewModel) {
@@ -163,11 +169,27 @@ fun XdwApp(
                     },
                     onNavigateSettings = {
                         settingsSource = when (currentRoute) {
-                            AppRoute.Collections.route -> SettingsSource.Collections
                             AppRoute.Settings.route -> settingsSource
-                            else -> SettingsSource.Journal
+                            else -> if (showJournalActions) {
+                                SettingsSource.Journal
+                            } else {
+                                SettingsSource.Collections
+                            }
                         }
                         navController.navigate(AppRoute.Settings.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    onNavigateSearch = {
+                        val targetRoute = selectedCollectionId
+                            ?.takeIf { showJournalActions }
+                            ?.let(AppRoute.SearchCollection::createRoute)
+                            ?: AppRoute.SearchGlobal.route
+                        navController.navigate(targetRoute) {
                             popUpTo(navController.graph.findStartDestination().id) {
                                 saveState = true
                             }
@@ -276,6 +298,57 @@ fun XdwApp(
                 )
             }
 
+            composable(AppRoute.SearchGlobal.route) {
+                SearchScreen(
+                    isGlobalSearch = true,
+                    collections = collections,
+                    entries = allEntries,
+                    currentCollection = null,
+                    contentPadding = contentPadding,
+                    onBack = { navController.popBackStack() },
+                    onOpenCollection = { collectionId ->
+                        viewModel.selectCollection(collectionId)
+                        navController.navigate(AppRoute.Journal.createRoute(collectionId))
+                    },
+                    onOpenEntry = { entry ->
+                        viewModel.selectCollection(entry.collectionId)
+                        navController.navigate(AppRoute.Detail.createRoute(entry.id))
+                    },
+                )
+            }
+
+            composable(
+                route = AppRoute.SearchCollection.route,
+                arguments = listOf(
+                    navArgument(AppRoute.SearchCollection.collectionIdArg) {
+                        type = NavType.LongType
+                    },
+                ),
+            ) { backStackEntry ->
+                val collectionId = backStackEntry.arguments?.getLong(AppRoute.SearchCollection.collectionIdArg)
+                    ?: return@composable
+
+                LaunchedEffect(collectionId) {
+                    viewModel.selectCollection(collectionId)
+                }
+
+                SearchScreen(
+                    isGlobalSearch = false,
+                    collections = collections,
+                    entries = if (currentCollection?.id == collectionId) entries else emptyList(),
+                    currentCollection = currentCollection?.takeIf { it.id == collectionId },
+                    contentPadding = contentPadding,
+                    onBack = { navController.popBackStack() },
+                    onOpenCollection = { targetCollectionId ->
+                        viewModel.selectCollection(targetCollectionId)
+                        navController.navigate(AppRoute.Journal.createRoute(targetCollectionId))
+                    },
+                    onOpenEntry = { entry ->
+                        navController.navigate(AppRoute.Detail.createRoute(entry.id))
+                    },
+                )
+            }
+
             composable(
                 route = AppRoute.ReplacePhoto.route,
                 arguments = listOf(
@@ -352,6 +425,7 @@ private fun MainBottomBar(
     onNavigateJournal: () -> Unit,
     onNavigateCamera: () -> Unit,
     onNavigateSettings: () -> Unit,
+    onNavigateSearch: () -> Unit,
 ) {
     Surface(
         tonalElevation = 8.dp,
@@ -362,7 +436,7 @@ private fun MainBottomBar(
                 .fillMaxWidth()
                 .padding(horizontal = 18.dp, vertical = 10.dp),
             horizontalArrangement = if (!showJournalActions) {
-                Arrangement.End
+                Arrangement.spacedBy(16.dp, Alignment.End)
             } else {
                 Arrangement.SpaceBetween
             },
@@ -391,6 +465,21 @@ private fun MainBottomBar(
                         contentDescription = "Съемка",
                     )
                 }
+            }
+
+            IconButton(onClick = onNavigateSearch) {
+                Icon(
+                    imageVector = Icons.Rounded.Search,
+                    contentDescription = "Поиск",
+                    tint = if (
+                        currentRoute == AppRoute.SearchGlobal.route ||
+                        currentRoute == AppRoute.SearchCollection.route
+                    ) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
             }
 
             IconButton(onClick = onNavigateSettings) {

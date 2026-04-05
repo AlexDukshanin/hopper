@@ -72,6 +72,13 @@ class MainViewModel(
             initialValue = emptyList(),
         )
 
+    val allEntries: StateFlow<List<WagonEntry>> = repository.observeAllEntries()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = emptyList(),
+        )
+
     val currentCollection: StateFlow<WagonCollection?> = selectedCollectionId
         .flatMapLatest { collectionId ->
             if (collectionId == null) {
