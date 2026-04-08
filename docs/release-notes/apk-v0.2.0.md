@@ -36,15 +36,22 @@ Major feature update for HOPPER with collection workflow improvements, QR exchan
 
 ## APK in this release
 
+- `HOPPER-universal-release.apk`
+- `HOPPER-arm64-v8a-release.apk`
+- `HOPPER-armeabi-v7a-release.apk`
+- `HOPPER-x86-release.apk`
+- `HOPPER-x86_64-release.apk`
 - `HOPPER-universal-debug.apk`
 
 ## Installation
 
 - Download the APK from the release assets
+- If you are not sure which one to choose, use `HOPPER-universal-release.apk`
+- For most modern phones, `HOPPER-arm64-v8a-release.apk` is the best lightweight option
 - Install it over the existing HOPPER build to keep collections and settings
 - If Android blocks installation, allow installs from the browser or file manager you used
 
 ## Important note
 
-- This release is still a universal debug APK for easy installation and testing
+- Release APKs are signed with the local debug key for direct installation and testing convenience
 - User data is preserved on update as long as the app is installed over the existing package and not removed first

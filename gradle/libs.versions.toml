@@ -13,7 +13,6 @@ kotlin = "2.3.10"
 ksp = "2.3.6"
 lifecycle = "2.10.0"
 mlkitText = "16.0.1"
-mlkitBarcode = "17.3.0"
 navigation = "2.9.5"
 room = "2.8.4"
 zxing = "3.5.3"
@@ -48,7 +47,6 @@ androidx-room-runtime = { group = "androidx.room", name = "room-runtime", versio
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 mlkit-text-recognition = { group = "com.google.mlkit", name = "text-recognition", version.ref = "mlkitText" }
-mlkit-barcode-scanning = { group = "com.google.mlkit", name = "barcode-scanning", version.ref = "mlkitBarcode" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 
 [plugins]

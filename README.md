@@ -35,13 +35,18 @@ Latest APK release:
 
 Included file:
 
-- `HOPPER-universal-debug.apk`
+- `HOPPER-universal-release.apk` — универсальный вариант для большинства пользователей
+- `HOPPER-arm64-v8a-release.apk` — более легкий вариант для большинства современных телефонов
+- `HOPPER-armeabi-v7a-release.apk` — вариант для более старых устройств
+- `HOPPER-x86-release.apk` и `HOPPER-x86_64-release.apk` — в основном для совместимости и тестов
+- `HOPPER-universal-debug.apk` — запасной debug-вариант для тестирования
 
 Installation notes:
 
-- This is a universal debug APK and it can be installed directly on Android devices
+- Release APKs in the GitHub release are installable directly on Android devices
+- For most phones the best choice is `HOPPER-arm64-v8a-release.apk`, and if architecture is unknown use `HOPPER-universal-release.apk`
 - If Android blocks installation, allow installs from the browser or file manager you used to download the APK
-- A signed release APK can be added later when a release keystore is configured
+- A dedicated production keystore can be configured later for final public distribution
 
 ## Build locally
 
@@ -59,8 +64,8 @@ Build release APK:
 
 Generated files:
 
-- `app/build/outputs/apk/debug/app-debug.apk`
-- `app/build/outputs/apk/release/app-release-unsigned.apk`
+- `app/build/outputs/apk/debug/*.apk`
+- `app/build/outputs/apk/release/*.apk`
 
 ## Release notes
 
