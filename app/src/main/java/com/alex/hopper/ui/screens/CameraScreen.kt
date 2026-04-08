@@ -4,13 +4,19 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.util.Log
+import android.util.Size
 import android.view.View
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.AspectRatio
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
@@ -27,10 +33,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.CenterFocusStrong
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -64,19 +72,21 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.Observer
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.alex.hopper.settings.ScanFrameSettings
 import com.alex.hopper.ui.MainViewModel
 import com.alex.hopper.util.await
 import java.io.File
 import kotlin.coroutines.resume
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 private object ScanGuideSpec {
-    const val widthFraction = 1f
-    const val heightFraction = 0.255f
-    const val topFraction = 0.30f
     val cornerRadius: Dp = 24.dp
 }
+
+private const val CameraLogTag = "HopperCamera"
+private val PreferredPreviewSize = Size(1280, 720)
 
 @Composable
 fun CameraScreen(
@@ -85,6 +95,8 @@ fun CameraScreen(
     replaceEntryId: Long?,
     collectionId: Long?,
     jpegQuality: Int,
+    scanFrameSettings: ScanFrameSettings,
+    onOpenScanFrameEditor: () -> Unit,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -158,6 +170,8 @@ fun CameraScreen(
         replaceEntryId = replaceEntryId,
         collectionId = collectionId,
         jpegQuality = jpegQuality,
+        scanFrameSettings = scanFrameSettings,
+        onOpenScanFrameEditor = onOpenScanFrameEditor,
     )
 }
 
@@ -250,6 +264,8 @@ private fun CameraCaptureState(
     replaceEntryId: Long?,
     collectionId: Long?,
     jpegQuality: Int,
+    scanFrameSettings: ScanFrameSettings,
+    onOpenScanFrameEditor: () -> Unit,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -265,6 +281,7 @@ private fun CameraCaptureState(
         imageCapture = null
         bindError = null
         isCameraBound = false
+        Log.d(CameraLogTag, "Bind capture camera started. jpegQuality=$jpegQuality replaceEntryId=$replaceEntryId collectionId=$collectionId")
         runCatching {
             currentPreview.awaitPreviewReady()
             bindCamera(
@@ -278,9 +295,15 @@ private fun CameraCaptureState(
             imageCapture = boundCamera.second
             isCameraBound = true
             bindError = null
+            Log.d(CameraLogTag, "Bind capture camera success. replaceEntryId=$replaceEntryId collectionId=$collectionId")
         }.onFailure { exception ->
+            if (exception is CancellationException) {
+                Log.d(CameraLogTag, "Bind capture camera cancelled by composition. replaceEntryId=$replaceEntryId collectionId=$collectionId")
+                return@onFailure
+            }
             bindError = exception.message.toFriendlyCameraMessage()
             isCameraBound = false
+            Log.e(CameraLogTag, "Bind capture camera failed", exception)
         }
     }
 
@@ -303,6 +326,7 @@ private fun CameraCaptureState(
 
     DisposableEffect(Unit) {
         onDispose {
+            Log.d(CameraLogTag, "Dispose capture camera. replaceEntryId=$replaceEntryId collectionId=$collectionId")
             imageCapture = null
             isCameraBound = false
             cameraProvider?.unbindAll()
@@ -318,7 +342,7 @@ private fun CameraCaptureState(
             factory = { viewContext ->
                 PreviewView(viewContext).apply {
                     scaleType = PreviewView.ScaleType.FILL_CENTER
-                    implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                    implementationMode = PreviewView.ImplementationMode.PERFORMANCE
                 }.also { previewView = it }
             },
             modifier = Modifier.fillMaxSize(),
@@ -331,8 +355,10 @@ private fun CameraCaptureState(
             } else {
                 statusMessage
             },
+            scanFrameSettings = scanFrameSettings,
             isProcessing = isProcessing,
             errorMessage = errorMessage ?: bindError,
+            onOpenScanFrameEditor = onOpenScanFrameEditor,
             onCapture = {
                 val capture = imageCapture?.takeIf { isCameraBound && isPreviewStreaming }
                 if (capture == null) {
@@ -340,7 +366,7 @@ private fun CameraCaptureState(
                     return@CameraGuideOverlay
                 }
                 val outputFile = viewModel.createCaptureFile()
-                val scanBitmap = previewView?.bitmap?.let(::cropPreviewBitmapForScan)
+                val scanBitmap = previewView?.bitmap?.let { cropPreviewBitmapForScan(it, scanFrameSettings) }
                 takePicture(
                     context = context,
                     imageCapture = capture,
@@ -374,9 +400,11 @@ private fun CameraCaptureState(
 private fun CameraGuideOverlay(
     modifier: Modifier = Modifier,
     statusMessage: String,
+    scanFrameSettings: ScanFrameSettings,
     isProcessing: Boolean,
     errorMessage: String?,
     captureEnabled: Boolean,
+    onOpenScanFrameEditor: () -> Unit,
     onCapture: () -> Unit,
 ) {
     var showHint by rememberSaveable { mutableStateOf(false) }
@@ -384,8 +412,10 @@ private fun CameraGuideOverlay(
     BoxWithConstraints(
         modifier = modifier.padding(vertical = 18.dp),
     ) {
-        val frameHeight = maxHeight * ScanGuideSpec.heightFraction
-        val frameTop = maxHeight * ScanGuideSpec.topFraction
+        val frameLeft = maxWidth * scanFrameSettings.leftFraction
+        val frameWidth = maxWidth * scanFrameSettings.widthFraction
+        val frameHeight = maxHeight * scanFrameSettings.heightFraction
+        val frameTop = maxHeight * scanFrameSettings.topFraction
         val visibleStatus = when {
             errorMessage != null -> errorMessage
             isProcessing -> statusMessage
@@ -393,10 +423,10 @@ private fun CameraGuideOverlay(
         }
 
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val holeLeft = size.width * ((1f - ScanGuideSpec.widthFraction) / 2f)
-            val holeWidth = size.width * ScanGuideSpec.widthFraction
-            val holeTop = size.height * ScanGuideSpec.topFraction
-            val holeHeight = size.height * ScanGuideSpec.heightFraction
+            val holeLeft = size.width * scanFrameSettings.leftFraction
+            val holeWidth = size.width * scanFrameSettings.widthFraction
+            val holeTop = size.height * scanFrameSettings.topFraction
+            val holeHeight = size.height * scanFrameSettings.heightFraction
             val holeRight = holeLeft + holeWidth
             val holeBottom = holeTop + holeHeight
 
@@ -428,6 +458,27 @@ private fun CameraGuideOverlay(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                FilledTonalIconButton(
+                    onClick = {
+                        Log.d(CameraLogTag, "Open scan frame editor from camera overlay")
+                        onOpenScanFrameEditor()
+                    },
+                    modifier = Modifier.size(42.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Tune,
+                        contentDescription = "Настроить рамку",
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+
             TextButton(
                 onClick = { showHint = !showHint },
                 colors = ButtonDefaults.textButtonColors(
@@ -465,9 +516,9 @@ private fun CameraGuideOverlay(
 
         Box(
             modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = frameTop)
-                .fillMaxWidth()
+                .align(Alignment.TopStart)
+                .padding(start = frameLeft, top = frameTop)
+                .width(frameWidth)
                 .height(frameHeight)
                 .border(
                     width = 2.dp,
@@ -527,7 +578,25 @@ private suspend fun bindCamera(
     jpegQuality: Int,
 ): Pair<ProcessCameraProvider, ImageCapture> {
     val cameraProvider = ProcessCameraProvider.getInstance(context).await()
-    val preview = Preview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }
+    val preview = Preview.Builder()
+        .setResolutionSelector(
+            ResolutionSelector.Builder()
+                .setAspectRatioStrategy(
+                    AspectRatioStrategy(
+                        AspectRatio.RATIO_16_9,
+                        AspectRatioStrategy.FALLBACK_RULE_AUTO,
+                    ),
+                )
+                .setResolutionStrategy(
+                    ResolutionStrategy(
+                        PreferredPreviewSize,
+                        ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
+                    ),
+                )
+                .build(),
+        )
+        .build()
+        .also { it.surfaceProvider = previewView.surfaceProvider }
     val imageCapture = ImageCapture.Builder()
         .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
         .setJpegQuality(jpegQuality)
@@ -567,11 +636,15 @@ private fun takePicture(
     )
 }
 
-private fun cropPreviewBitmapForScan(bitmap: Bitmap): Bitmap {
-    val cropWidth = (bitmap.width * ScanGuideSpec.widthFraction).roundToInt()
-    val cropHeight = (bitmap.height * ScanGuideSpec.heightFraction).roundToInt()
-    val left = ((bitmap.width - cropWidth) / 2f).roundToInt()
-    val top = (bitmap.height * ScanGuideSpec.topFraction).roundToInt()
+private fun cropPreviewBitmapForScan(
+    bitmap: Bitmap,
+    scanFrameSettings: ScanFrameSettings,
+): Bitmap {
+    val cropWidth = (bitmap.width * scanFrameSettings.widthFraction).roundToInt()
+    val cropHeight = (bitmap.height * scanFrameSettings.heightFraction).roundToInt()
+    val left = (bitmap.width * scanFrameSettings.leftFraction).roundToInt()
+        .coerceIn(0, bitmap.width - cropWidth)
+    val top = (bitmap.height * scanFrameSettings.topFraction).roundToInt()
         .coerceIn(0, bitmap.height - cropHeight)
     val safeWidth = cropWidth.coerceAtMost(bitmap.width - left.coerceAtLeast(0))
     val safeHeight = cropHeight.coerceAtMost(bitmap.height - top)

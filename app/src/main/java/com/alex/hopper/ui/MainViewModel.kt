@@ -10,12 +10,14 @@ import com.alex.hopper.data.RailRepository
 import com.alex.hopper.data.WagonCollection
 import com.alex.hopper.data.WagonEntry
 import com.alex.hopper.exchange.CollectionExchangeManager
+import com.alex.hopper.exchange.QrShareSession
 import com.alex.hopper.settings.AppIconManager
 import com.alex.hopper.settings.AppIconMode
 import com.alex.hopper.settings.AppSettings
 import com.alex.hopper.settings.AppThemeMode
 import com.alex.hopper.settings.CollectionLayoutMode
 import com.alex.hopper.settings.NewEntryPosition
+import com.alex.hopper.settings.ScanFrameSettings
 import com.alex.hopper.settings.UserSettingsRepository
 import java.io.File
 import kotlinx.coroutines.flow.Flow
@@ -38,12 +40,21 @@ data class CameraUiState(
     val errorMessage: String? = null,
 )
 
+data class QrImportUiState(
+    val scannedChunks: Int = 0,
+    val totalChunks: Int? = null,
+    val isImporting: Boolean = false,
+    val statusMessage: String = "Наведите камеру на QR-код Hopper.",
+    val errorMessage: String? = null,
+)
+
 sealed interface AppEvent {
     data class OpenEntry(val entryId: Long) : AppEvent
     data class OpenCollection(
         val collectionId: Long,
         val message: String,
     ) : AppEvent
+    data object OpenQrShare : AppEvent
     data class ShareFile(
         val uri: Uri,
         val mimeType: String,
@@ -55,7 +66,7 @@ sealed interface AppEvent {
     ) : AppEvent
     data class PhotoUpdated(val message: String) : AppEvent
     data class PendingDelete(
-        val entryId: Long,
+        val entryIds: List<Long>,
         val message: String,
         val popBack: Boolean,
     ) : AppEvent
@@ -67,14 +78,21 @@ class MainViewModel(
     private val appIconManager: AppIconManager,
     private val collectionExchangeManager: CollectionExchangeManager,
 ) : ViewModel() {
-    private val pendingDeleteEntry = MutableStateFlow<WagonEntry?>(null)
+    private val pendingDeleteEntries = MutableStateFlow<List<WagonEntry>>(emptyList())
     private val _selectedCollectionId = MutableStateFlow<Long?>(null)
     private val _cameraState = MutableStateFlow(CameraUiState())
+    private val _qrShareSession = MutableStateFlow<QrShareSession?>(null)
+    private val _qrImportState = MutableStateFlow(QrImportUiState())
     private val _events = MutableSharedFlow<AppEvent>(extraBufferCapacity = 1)
+    private var activeQrTransferId: String? = null
+    private var activeQrTransferTotalChunks: Int = 0
+    private val activeQrChunks = linkedMapOf<Int, String>()
 
     val settings: StateFlow<AppSettings> = settingsRepository.settings
     val selectedCollectionId: StateFlow<Long?> = _selectedCollectionId.asStateFlow()
     val cameraState: StateFlow<CameraUiState> = _cameraState.asStateFlow()
+    val qrShareSession: StateFlow<QrShareSession?> = _qrShareSession.asStateFlow()
+    val qrImportState: StateFlow<QrImportUiState> = _qrImportState.asStateFlow()
     val events = _events.asSharedFlow()
 
     val collections: StateFlow<List<CollectionSummary>> = repository.observeCollections()
@@ -122,9 +140,10 @@ class MainViewModel(
                 repository.observeEntries(collectionId)
             }
         },
-        pendingDeleteEntry,
+        pendingDeleteEntries,
     ) { items, pending ->
-        items.filterNot { it.id == pending?.id }
+        val pendingIds = pending.map(WagonEntry::id).toSet()
+        items.filterNot { it.id in pendingIds }
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -136,6 +155,13 @@ class MainViewModel(
 
         viewModelScope.launch {
             repository.importLegacyJournalDescription(settings.value.journalDescription)
+        }
+
+        if (!settingsRepository.hasMigratedCollectionScopedJournalSettings()) {
+            viewModelScope.launch {
+                repository.importLegacyCollectionSettings(settings.value)
+                settingsRepository.markCollectionScopedJournalSettingsMigrated()
+            }
         }
 
         viewModelScope.launch {
@@ -158,9 +184,10 @@ class MainViewModel(
 
     fun observeEntries(collectionId: Long): Flow<List<WagonEntry>> = combine(
         repository.observeEntries(collectionId),
-        pendingDeleteEntry,
+        pendingDeleteEntries,
     ) { items, pending ->
-        items.filterNot { it.id == pending?.id }
+        val pendingIds = pending.map(WagonEntry::id).toSet()
+        items.filterNot { it.id in pendingIds }
     }
 
     fun createCaptureFile(): File = repository.createCaptureFile()
@@ -201,6 +228,17 @@ class MainViewModel(
         _cameraState.value = CameraUiState()
     }
 
+    fun clearQrShareSession() {
+        _qrShareSession.value = null
+    }
+
+    fun resetQrImportState() {
+        activeQrTransferId = null
+        activeQrTransferTotalChunks = 0
+        activeQrChunks.clear()
+        _qrImportState.value = QrImportUiState()
+    }
+
     fun onCaptureError(message: String) {
         _cameraState.value = CameraUiState(
             statusMessage = message,
@@ -221,9 +259,6 @@ class MainViewModel(
 
             runCatching { repository.saveCapturedPhoto(file, scanBitmap, collectionId) }
                 .onSuccess { entryId ->
-                    if (settings.value.newEntryPosition == NewEntryPosition.First) {
-                        repository.moveEntry(entryId, 0)
-                    }
                     _cameraState.value = CameraUiState(
                         statusMessage = "Запись добавлена в журнал.",
                     )
@@ -233,6 +268,28 @@ class MainViewModel(
                     _cameraState.value = CameraUiState(
                         statusMessage = "Не удалось обработать снимок.",
                         errorMessage = exception.message ?: "Ошибка распознавания.",
+                    )
+                }
+        }
+    }
+
+    fun createEmptyEntry(collectionId: Long) {
+        viewModelScope.launch {
+            runCatching { repository.createEmptyEntry(collectionId) }
+                .onSuccess {
+                    _events.emit(
+                        AppEvent.Snackbar(
+                            message = "Пустая карточка добавлена",
+                            durationMillis = 1_000,
+                        ),
+                    )
+                }
+                .onFailure { exception ->
+                    _events.emit(
+                        AppEvent.Snackbar(
+                            message = exception.message ?: "Не удалось добавить пустую карточку",
+                            durationMillis = 1_600,
+                        ),
                     )
                 }
         }
@@ -271,11 +328,13 @@ class MainViewModel(
         }
     }
 
-    fun updateJournalDescription(description: String) {
-        val collectionId = _selectedCollectionId.value ?: return
+    fun updateJournalDescription(
+        collectionId: Long,
+        description: String,
+    ) {
         viewModelScope.launch {
             repository.updateCollectionDescription(collectionId, description)
-            _events.emit(AppEvent.Snackbar("Описание сохранено", durationMillis = 1_200))
+            _events.emit(AppEvent.Snackbar("Сохранено", durationMillis = 1_200))
         }
     }
 
@@ -349,27 +408,42 @@ class MainViewModel(
         settingsRepository.setCollectionLayoutMode(mode)
     }
 
-    fun toggleDirection() {
-        settingsRepository.toggleDirection()
-        showSnackbar("Направление изменено", durationMillis = 1_000)
+    fun toggleDirection(collectionId: Long) {
+        viewModelScope.launch {
+            repository.toggleCollectionDirection(collectionId)
+            _events.emit(AppEvent.Snackbar("Направление изменено", durationMillis = 1_000))
+        }
     }
 
     fun updateDirectionLabels(
+        collectionId: Long,
         primaryLabel: String,
         secondaryLabel: String,
     ) {
-        settingsRepository.setDirectionLabels(primaryLabel, secondaryLabel)
-        showSnackbar("Названия обновлены", durationMillis = 1_200)
+        viewModelScope.launch {
+            repository.updateCollectionDirectionLabels(collectionId, primaryLabel, secondaryLabel)
+            _events.emit(AppEvent.Snackbar("Названия обновлены", durationMillis = 1_200))
+        }
     }
 
-    fun setNewEntryPosition(position: NewEntryPosition) {
-        settingsRepository.setNewEntryPosition(position)
-        showSnackbar("Порядок обновлен", durationMillis = 1_000)
+    fun setNewEntryPosition(
+        collectionId: Long,
+        position: NewEntryPosition,
+    ) {
+        viewModelScope.launch {
+            repository.updateCollectionNewEntryPosition(collectionId, position)
+            _events.emit(AppEvent.Snackbar("Порядок обновлен", durationMillis = 1_000))
+        }
     }
 
-    fun setIncludeDirectionInCopy(include: Boolean) {
-        settingsRepository.setIncludeDirectionInCopy(include)
-        showSnackbar("Копирование обновлено", durationMillis = 1_000)
+    fun setIncludeDirectionInCopy(
+        collectionId: Long,
+        include: Boolean,
+    ) {
+        viewModelScope.launch {
+            repository.updateCollectionIncludeDirectionInCopy(collectionId, include)
+            _events.emit(AppEvent.Snackbar("Копирование обновлено", durationMillis = 1_000))
+        }
     }
 
     fun setShowPhotosInJournal(show: Boolean) {
@@ -384,6 +458,28 @@ class MainViewModel(
     fun setSharePhotoQualityJpeg(quality: Int) {
         settingsRepository.setSharePhotoQualityJpeg(quality)
         showSnackbar("Качество отправки: JPEG $quality", durationMillis = 1_000)
+    }
+
+    fun setScanFrameWidthFraction(value: Float) {
+        settingsRepository.setScanFrameWidthFraction(value)
+    }
+
+    fun setScanFrameHeightFraction(value: Float) {
+        settingsRepository.setScanFrameHeightFraction(value)
+    }
+
+    fun setScanFrameTopFraction(value: Float) {
+        settingsRepository.setScanFrameTopFraction(value)
+    }
+
+    fun setScanFrameSettings(scanFrameSettings: ScanFrameSettings) {
+        settingsRepository.setScanFrameSettings(scanFrameSettings)
+        showSnackbar("Рамка обновлена", durationMillis = 1_000)
+    }
+
+    fun resetScanFrameSettings() {
+        settingsRepository.resetScanFrameSettings()
+        showSnackbar("Рамка сброшена", durationMillis = 1_000)
     }
 
     fun shareCollectionFile(
@@ -420,6 +516,24 @@ class MainViewModel(
         }
     }
 
+    fun prepareCollectionQrShare(collectionId: Long) {
+        viewModelScope.launch {
+            runCatching {
+                collectionExchangeManager.createQrShareSession(collectionId)
+            }.onSuccess { session ->
+                _qrShareSession.value = session
+                _events.emit(AppEvent.OpenQrShare)
+            }.onFailure { exception ->
+                _events.emit(
+                    AppEvent.Snackbar(
+                        message = exception.message ?: "Не удалось подготовить QR-код подборки",
+                        durationMillis = 1_600,
+                    ),
+                )
+            }
+        }
+    }
+
     fun importCollectionFromUri(uri: Uri) {
         viewModelScope.launch {
             runCatching { collectionExchangeManager.importFromUri(uri) }
@@ -436,41 +550,138 @@ class MainViewModel(
                     _events.emit(
                         AppEvent.Snackbar(
                             message = exception.message ?: "Не удалось импортировать подборку",
-                            durationMillis = 1_800,
-                        ),
-                    )
-                }
+                        durationMillis = 1_800,
+                    ),
+                )
+            }
+        }
+    }
+
+    fun onQrCodeScanned(rawValue: String) {
+        if (_qrImportState.value.isImporting) return
+
+        val chunk = collectionExchangeManager.parseQrChunk(rawValue) ?: return
+        val currentTransferId = activeQrTransferId
+        if (currentTransferId != null && currentTransferId != chunk.transferId) {
+            _qrImportState.value = _qrImportState.value.copy(
+                errorMessage = "Сначала завершите текущий набор QR-кодов.",
+                statusMessage = "Сканируется другая подборка: ${activeQrChunks.size} из $activeQrTransferTotalChunks.",
+            )
+            return
+        }
+
+        if (currentTransferId == null) {
+            activeQrTransferId = chunk.transferId
+            activeQrTransferTotalChunks = chunk.total
+            activeQrChunks.clear()
+        }
+
+        val wasAdded = activeQrChunks.putIfAbsent(chunk.index, rawValue) == null
+        val scannedCount = activeQrChunks.size
+        val totalChunks = activeQrTransferTotalChunks
+
+        _qrImportState.value = QrImportUiState(
+            scannedChunks = scannedCount,
+            totalChunks = totalChunks,
+            isImporting = false,
+            statusMessage = if (wasAdded) {
+                "Получено $scannedCount из $totalChunks QR-кодов."
+            } else {
+                "Этот QR уже считан: $scannedCount из $totalChunks."
+            },
+            errorMessage = null,
+        )
+
+        if (scannedCount != totalChunks) return
+
+        _qrImportState.value = _qrImportState.value.copy(
+            isImporting = true,
+            statusMessage = "Импортирую подборку из QR-кодов...",
+            errorMessage = null,
+        )
+
+        viewModelScope.launch {
+            runCatching {
+                collectionExchangeManager.importFromQrChunks(activeQrChunks.values)
+            }.onSuccess { result ->
+                _qrImportState.value = _qrImportState.value.copy(
+                    isImporting = true,
+                    statusMessage = "Подборка импортирована. Открываю журнал...",
+                    errorMessage = null,
+                )
+                _selectedCollectionId.value = result.collectionId
+                _events.emit(
+                    AppEvent.OpenCollection(
+                        collectionId = result.collectionId,
+                        message = "Подборка \"${result.collectionName}\" импортирована из QR",
+                    ),
+                )
+            }.onFailure { exception ->
+                val message = exception.message ?: "Не удалось импортировать подборку из QR-кодов"
+                resetQrImportState()
+                _qrImportState.value = QrImportUiState(
+                    statusMessage = "Не удалось импортировать подборку.",
+                    errorMessage = message,
+                )
+            }
         }
     }
 
     fun requestDelete(entry: WagonEntry, popBack: Boolean) {
+        requestDeleteEntries(
+            entries = listOf(entry),
+            popBack = popBack,
+            message = "Карточка удалена",
+        )
+    }
+
+    fun requestDeleteEntries(entries: List<WagonEntry>) {
+        val count = entries.size
+        val message = if (count == 1) {
+            "Карточка удалена"
+        } else {
+            "Удалено $count карточки"
+        }
+        requestDeleteEntries(
+            entries = entries,
+            popBack = false,
+            message = message,
+        )
+    }
+
+    private fun requestDeleteEntries(
+        entries: List<WagonEntry>,
+        popBack: Boolean,
+        message: String,
+    ) {
         viewModelScope.launch {
-            val previousPending = pendingDeleteEntry.value
-            if (previousPending != null) {
-                repository.deleteEntry(previousPending)
+            if (entries.isEmpty()) return@launch
+            val previousPending = pendingDeleteEntries.value
+            if (previousPending.isNotEmpty()) {
+                repository.deleteEntries(previousPending)
             }
-            pendingDeleteEntry.value = entry
+            pendingDeleteEntries.value = entries
             _events.emit(
                 AppEvent.PendingDelete(
-                    entryId = entry.id,
-                    message = "Карточка удалена",
+                    entryIds = entries.map(WagonEntry::id),
+                    message = message,
                     popBack = popBack,
                 ),
             )
         }
     }
 
-    fun restorePendingDelete(entryId: Long) {
-        if (pendingDeleteEntry.value?.id == entryId) {
-            pendingDeleteEntry.value = null
+    fun restorePendingDelete(entryIds: List<Long>) {
+        if (pendingDeleteEntries.value.hasSameIds(entryIds)) {
+            pendingDeleteEntries.value = emptyList()
         }
     }
 
-    fun confirmPendingDelete(entryId: Long) {
+    fun confirmPendingDelete(entryIds: List<Long>) {
         viewModelScope.launch {
-            val entry = pendingDeleteEntry.value?.takeIf { it.id == entryId } ?: return@launch
-            repository.deleteEntry(entry)
-            pendingDeleteEntry.value = null
+            val entries = pendingDeleteEntries.value.takeIf { it.hasSameIds(entryIds) } ?: return@launch
+            repository.deleteEntries(entries)
+            pendingDeleteEntries.value = emptyList()
         }
     }
 
@@ -493,4 +704,8 @@ class MainViewModel(
             error("Unknown ViewModel class: ${modelClass.name}")
         }
     }
+}
+
+private fun List<WagonEntry>.hasSameIds(entryIds: List<Long>): Boolean {
+    return size == entryIds.size && map(WagonEntry::id).toSet() == entryIds.toSet()
 }

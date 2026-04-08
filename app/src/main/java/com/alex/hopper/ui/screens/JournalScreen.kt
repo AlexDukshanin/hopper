@@ -5,6 +5,9 @@ import android.content.Intent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,10 +16,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -27,8 +32,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.PhotoCamera
@@ -37,6 +45,7 @@ import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
@@ -50,6 +59,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,15 +71,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
 import com.alex.hopper.data.WagonCollection
 import com.alex.hopper.data.WagonEntry
 import com.alex.hopper.settings.AppSettings
+import com.alex.hopper.ui.HopperUiMetrics
+import com.alex.hopper.ui.rememberHopperUiMetrics
 import com.alex.hopper.util.formatTimestamp
 import java.io.File
 
@@ -92,11 +108,15 @@ fun JournalScreen(
     onUpdateDirections: (String, String) -> Unit,
     onSaveNote: (Long, String) -> Unit,
     onSaveJournalDescription: (String) -> Unit,
+    onAddEmptyEntry: () -> Unit,
     onTogglePhotoVisibility: (Boolean) -> Unit,
     onMoveEntry: (Long, Int) -> Unit,
     onCopied: () -> Unit,
+    onDeleteEntries: (List<WagonEntry>) -> Unit,
     onShareCollectionFile: (Boolean) -> Unit,
+    onShareCollectionQr: () -> Unit,
 ) {
+    val metrics = rememberHopperUiMetrics()
     val activeCollection = collection
     if (activeCollection == null) {
         Box(
@@ -115,8 +135,10 @@ fun JournalScreen(
 
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
-    val rowNumbers = buildPrimaryNumbers(entries, settings, CopyListFormat.Row)
-    val columnNumbers = buildPrimaryNumbers(entries, settings, CopyListFormat.Column)
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val rowNumbers = buildPrimaryNumbers(entries, activeCollection, CopyListFormat.Row)
+    val columnNumbers = buildPrimaryNumbers(entries, activeCollection, CopyListFormat.Column)
     val emptyCount = remember(entries) { entries.count { !it.isLoaded } }
     val loadedCount = remember(entries) { entries.count(WagonEntry::isLoaded) }
     var editingEntry by remember { mutableStateOf<WagonEntry?>(null) }
@@ -125,194 +147,343 @@ fun JournalScreen(
     var photoActionTarget by remember { mutableStateOf<WagonEntry?>(null) }
     var movingEntry by remember { mutableStateOf<WagonEntry?>(null) }
     var editingDirections by remember { mutableStateOf(false) }
+    var multiDeleteConfirmVisible by remember { mutableStateOf(false) }
+    var selectionMode by remember(activeCollection.id) { mutableStateOf(false) }
+    var selectedEntryIds by remember(activeCollection.id) { mutableStateOf<Set<Long>>(emptySet()) }
     var copyListDialogVisible by remember { mutableStateOf(false) }
     var sendListDialogVisible by remember { mutableStateOf(false) }
     var journalDescriptionDraft by rememberSaveable(activeCollection.id, activeCollection.description) {
         mutableStateOf(activeCollection.description)
     }
 
-    LazyColumn(
+    LaunchedEffect(entries) {
+        val validIds = entries.map(WagonEntry::id).toSet()
+        val filteredIds = selectedEntryIds.intersect(validIds)
+        if (filteredIds != selectedEntryIds) {
+            selectedEntryIds = filteredIds
+        }
+        if (selectionMode && filteredIds.isEmpty()) {
+            selectionMode = false
+        }
+    }
+
+    val selectedEntries = remember(entries, selectedEntryIds) {
+        entries.filter { it.id in selectedEntryIds }
+    }
+
+    fun toggleSelection(entryId: Long) {
+        val nextIds = if (entryId in selectedEntryIds) {
+            selectedEntryIds - entryId
+        } else {
+            selectedEntryIds + entryId
+        }
+        selectedEntryIds = nextIds
+        selectionMode = nextIds.isNotEmpty()
+    }
+
+    fun enterSelectionMode(initialEntryId: Long) {
+        selectionMode = true
+        selectedEntryIds = setOf(initialEntryId)
+        deleteEntryTarget = null
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding),
-        contentPadding = PaddingValues(vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        item {
-            ElevatedCard(
-                colors = CardDefaults.elevatedCardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                ),
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                top = if (selectionMode && entries.isNotEmpty()) {
+                    metrics.journalSelectionTopInset
+                } else {
+                    metrics.verticalPadding - 4.dp
+                },
+                bottom = metrics.verticalPadding - 4.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(metrics.smallSpacing),
+        ) {
+            item {
+                ElevatedCard(
+                    colors = CardDefaults.elevatedCardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ),
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.Top,
+                    Column(
+                        modifier = Modifier.padding(
+                            horizontal = metrics.cardPadding - 2.dp,
+                            vertical = metrics.cardPadding,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
                     ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.Top,
                         ) {
-                            Text(
-                                text = "Журнал вагонов",
-                                style = MaterialTheme.typography.headlineSmall,
-                            )
-                            Text(
-                                text = activeCollection.name,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Text(
+                                    text = "Журнал вагонов",
+                                    style = MaterialTheme.typography.headlineSmall.copy(
+                                        fontSize = (metrics.sectionTitleSize.value + 2f).sp,
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = activeCollection.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            FilledTonalIconButton(
+                                onClick = onGoHome,
+                                modifier = Modifier.size(metrics.largeIconButtonSize),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Home,
+                                    contentDescription = "Подборки",
+                                )
+                            }
                         }
-                        FilledTonalIconButton(
-                            onClick = onGoHome,
-                            modifier = Modifier.size(46.dp),
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(metrics.smallSpacing),
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Home,
-                                contentDescription = "Подборки",
-                            )
+                            FilledTonalButton(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(metrics.primaryActionHeight),
+                                shape = RoundedCornerShape(20.dp),
+                                border = BorderStroke(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+                                ),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surface,
+                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                    disabledContainerColor = MaterialTheme.colorScheme.surface,
+                                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                ),
+                                onClick = { copyListDialogVisible = true },
+                                enabled = rowNumbers.isNotBlank(),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.ContentCopy,
+                                    contentDescription = null,
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Копировать",
+                                    style = if (metrics.isCompact) {
+                                        MaterialTheme.typography.labelMedium
+                                    } else {
+                                        MaterialTheme.typography.labelLarge
+                                    },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            FilledTonalButton(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(metrics.primaryActionHeight),
+                                shape = RoundedCornerShape(20.dp),
+                                border = BorderStroke(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+                                ),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surface,
+                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                    disabledContainerColor = MaterialTheme.colorScheme.surface,
+                                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                ),
+                                onClick = { sendListDialogVisible = true },
+                                enabled = rowNumbers.isNotBlank(),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Share,
+                                    contentDescription = null,
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Отправить",
+                                    style = if (metrics.isCompact) {
+                                        MaterialTheme.typography.labelMedium
+                                    } else {
+                                        MaterialTheme.typography.labelLarge
+                                    },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        FilledTonalButton(
-                            modifier = Modifier.weight(1f),
-                            onClick = { copyListDialogVisible = true },
-                            enabled = rowNumbers.isNotBlank(),
+                        OutlinedTextField(
+                            modifier = Modifier.fillMaxWidth(),
+                            value = journalDescriptionDraft,
+                            onValueChange = { journalDescriptionDraft = it.take(240) },
+                            minLines = 3,
+                            maxLines = 3,
+                            shape = RoundedCornerShape(18.dp),
+                            label = { Text("Описание журнала") },
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(metrics.smallSpacing),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.ContentCopy,
-                                contentDescription = null,
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Копировать список")
-                        }
-                        FilledTonalButton(
-                            modifier = Modifier.weight(1f),
-                            onClick = { sendListDialogVisible = true },
-                            enabled = rowNumbers.isNotBlank(),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Share,
-                                contentDescription = null,
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Отправить")
-                        }
-                    }
-                    OutlinedTextField(
-                        modifier = Modifier.fillMaxWidth(),
-                        value = journalDescriptionDraft,
-                        onValueChange = { journalDescriptionDraft = it.take(240) },
-                        minLines = 3,
-                        maxLines = 3,
-                        shape = RoundedCornerShape(18.dp),
-                        label = { Text("Описание журнала") },
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        FilledTonalButton(
-                            modifier = Modifier.weight(1f),
-                            onClick = { onSaveJournalDescription(journalDescriptionDraft.trim()) },
-                            enabled = journalDescriptionDraft != activeCollection.description,
-                        ) {
-                            Text("Сохранить описание")
-                        }
-                        FilledTonalIconButton(
-                            onClick = { onTogglePhotoVisibility(!settings.showPhotosInJournal) },
-                            modifier = Modifier.size(48.dp),
-                        ) {
-                            Icon(
-                                imageVector = if (settings.showPhotosInJournal) {
-                                    Icons.Rounded.Visibility
-                                } else {
-                                    Icons.Rounded.VisibilityOff
+                            FilledTonalButton(
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    focusManager.clearFocus(force = true)
+                                    keyboardController?.hide()
+                                    onSaveJournalDescription(journalDescriptionDraft.trim())
                                 },
-                                contentDescription = "Изменить вид списка",
-                            )
+                                enabled = journalDescriptionDraft != activeCollection.description,
+                            ) {
+                                Text("Сохранить описание")
+                            }
+                            FilledTonalIconButton(
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surface,
+                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                    disabledContainerColor = MaterialTheme.colorScheme.surface,
+                                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                ),
+                                onClick = { onTogglePhotoVisibility(!settings.showPhotosInJournal) },
+                                modifier = Modifier
+                                    .size(metrics.largeIconButtonSize),
+                            ) {
+                                Icon(
+                                    imageVector = if (settings.showPhotosInJournal) {
+                                        Icons.Rounded.Visibility
+                                    } else {
+                                        Icons.Rounded.VisibilityOff
+                                    },
+                                    contentDescription = "Изменить вид списка",
+                                )
+                            }
                         }
+                    }
+                }
+            }
+
+            if (entries.isEmpty()) {
+                item {
+                    EmptyJournalState(
+                        metrics = metrics,
+                        onOpenCamera = onOpenCamera,
+                        onAddEmptyEntry = onAddEmptyEntry,
+                    )
+                }
+            } else {
+                item {
+                    if (!selectionMode) {
+                        DirectionHeaderRow(
+                            metrics = metrics,
+                            currentLabel = activeCollection.topDirectionLabel,
+                            onToggleDirection = onToggleDirection,
+                            onEdit = { editingDirections = true },
+                        )
+                    }
+                }
+
+                itemsIndexed(
+                    items = entries,
+                    key = { _, item -> item.id },
+                ) { index, entry ->
+                    if (settings.showPhotosInJournal) {
+                        JournalEntryCard(
+                            order = index + 1,
+                            numberFontSizeSp = settings.numberFontSizeSp,
+                            entry = entry,
+                            selectionMode = selectionMode,
+                            selected = entry.id in selectedEntryIds,
+                            onOpenEntry = onOpenEntry,
+                            onOpenPhoto = onOpenPhoto,
+                            onCopy = {
+                                clipboardManager.setText(AnnotatedString(it))
+                                onCopied()
+                            },
+                            onToggleSelection = { toggleSelection(entry.id) },
+                            onEdit = { editingEntry = entry },
+                            onMove = { movingEntry = entry },
+                            onToggleLoadState = { onUpdateLoadState(entry.id, !entry.isLoaded) },
+                            onEditNote = { editingNoteEntry = entry },
+                            onAskDeleteEntry = { deleteEntryTarget = entry },
+                            onAskPhotoActions = { photoActionTarget = entry },
+                        )
+                    } else {
+                        CompactJournalEntryRow(
+                            order = index + 1,
+                            numberFontSizeSp = settings.numberFontSizeSp,
+                            entry = entry,
+                            selectionMode = selectionMode,
+                            selected = entry.id in selectedEntryIds,
+                            onOpenEntry = onOpenEntry,
+                            onCopy = {
+                                clipboardManager.setText(AnnotatedString(it))
+                                onCopied()
+                            },
+                            onToggleSelection = { toggleSelection(entry.id) },
+                            onEdit = { editingEntry = entry },
+                            onMove = { movingEntry = entry },
+                            onToggleLoadState = { onUpdateLoadState(entry.id, !entry.isLoaded) },
+                            onAskDeleteEntry = { deleteEntryTarget = entry },
+                        )
+                    }
+                }
+
+                if (!selectionMode) {
+                    item {
+                        BottomDirectionButton(
+                            metrics = metrics,
+                            label = activeCollection.bottomDirectionLabel,
+                            onToggleDirection = onToggleDirection,
+                        )
+                    }
+
+                    item {
+                        AddEmptyEntryButton(
+                            modifier = Modifier.padding(horizontal = metrics.smallSpacing),
+                            metrics = metrics,
+                            onClick = onAddEmptyEntry,
+                        )
+                    }
+
+                    item {
+                        LoadStateSummary(
+                            emptyCount = emptyCount,
+                            loadedCount = loadedCount,
+                        )
                     }
                 }
             }
         }
 
-        if (entries.isEmpty()) {
-            item {
-                EmptyJournalState(onOpenCamera = onOpenCamera)
-            }
-        } else {
-            item {
-                DirectionHeaderRow(
-                    currentLabel = settings.topDirectionLabel,
-                    onToggleDirection = onToggleDirection,
-                    onEdit = { editingDirections = true },
-                )
-            }
-
-            itemsIndexed(
-                items = entries,
-                key = { _, item -> item.id },
-            ) { index, entry ->
-                if (settings.showPhotosInJournal) {
-                    JournalEntryCard(
-                        order = index + 1,
-                        numberFontSizeSp = settings.numberFontSizeSp,
-                        entry = entry,
-                        onOpenEntry = onOpenEntry,
-                        onOpenPhoto = onOpenPhoto,
-                        onCopy = {
-                            clipboardManager.setText(AnnotatedString(it))
-                            onCopied()
-                        },
-                        onEdit = { editingEntry = entry },
-                        onMove = { movingEntry = entry },
-                        onToggleLoadState = { onUpdateLoadState(entry.id, !entry.isLoaded) },
-                        onEditNote = { editingNoteEntry = entry },
-                        onAskDeleteEntry = { deleteEntryTarget = entry },
-                        onAskPhotoActions = { photoActionTarget = entry },
-                    )
-                } else {
-                    CompactJournalEntryRow(
-                        order = index + 1,
-                        numberFontSizeSp = settings.numberFontSizeSp,
-                        entry = entry,
-                        onOpenEntry = onOpenEntry,
-                        onCopy = {
-                            clipboardManager.setText(AnnotatedString(it))
-                            onCopied()
-                        },
-                        onEdit = { editingEntry = entry },
-                        onMove = { movingEntry = entry },
-                        onToggleLoadState = { onUpdateLoadState(entry.id, !entry.isLoaded) },
-                        onAskDeleteEntry = { deleteEntryTarget = entry },
-                    )
-                }
-            }
-
-            item {
-                BottomDirectionButton(
-                    label = settings.bottomDirectionLabel,
-                    onToggleDirection = onToggleDirection,
-                )
-            }
-
-            item {
-                LoadStateSummary(
-                    emptyCount = emptyCount,
-                    loadedCount = loadedCount,
-                )
-            }
+        if (selectionMode && entries.isNotEmpty()) {
+            SelectionModeBar(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = metrics.verticalPadding - 4.dp),
+                selectedCount = selectedEntryIds.size,
+                allSelected = selectedEntryIds.size == entries.size,
+                onSelectAll = {
+                    selectedEntryIds = entries.map(WagonEntry::id).toSet()
+                },
+                onClearSelection = {
+                    selectedEntryIds = emptySet()
+                    selectionMode = false
+                },
+                onDeleteSelection = { multiDeleteConfirmVisible = true },
+            )
         }
     }
 
@@ -351,6 +522,10 @@ fun JournalScreen(
             },
             onSendFileWithPhotos = {
                 onShareCollectionFile(true)
+                sendListDialogVisible = false
+            },
+            onSendQr = {
+                onShareCollectionQr()
                 sendListDialogVisible = false
             },
         )
@@ -392,8 +567,8 @@ fun JournalScreen(
 
     if (editingDirections) {
         EditDirectionsDialog(
-            initialPrimary = settings.primaryDirectionLabel,
-            initialSecondary = settings.secondaryDirectionLabel,
+            initialPrimary = activeCollection.primaryDirectionLabel,
+            initialSecondary = activeCollection.secondaryDirectionLabel,
             onDismiss = { editingDirections = false },
             onSave = { primary, secondary ->
                 onUpdateDirections(primary, secondary)
@@ -405,9 +580,23 @@ fun JournalScreen(
     deleteEntryTarget?.let { entry ->
         ConfirmDeleteEntryDialog(
             onDismiss = { deleteEntryTarget = null },
+            onMultiDelete = { enterSelectionMode(entry.id) },
             onConfirm = {
                 onDeleteEntry(entry)
                 deleteEntryTarget = null
+            },
+        )
+    }
+
+    if (multiDeleteConfirmVisible) {
+        ConfirmDeleteMultipleDialog(
+            count = selectedEntryIds.size,
+            onDismiss = { multiDeleteConfirmVisible = false },
+            onConfirm = {
+                onDeleteEntries(selectedEntries)
+                selectedEntryIds = emptySet()
+                selectionMode = false
+                multiDeleteConfirmVisible = false
             },
         )
     }
@@ -436,20 +625,35 @@ private fun CompactJournalEntryRow(
     order: Int,
     numberFontSizeSp: Float,
     entry: WagonEntry,
+    selectionMode: Boolean,
+    selected: Boolean,
     onOpenEntry: (Long) -> Unit,
     onCopy: (String) -> Unit,
+    onToggleSelection: () -> Unit,
     onEdit: () -> Unit,
     onMove: () -> Unit,
     onToggleLoadState: () -> Unit,
     onAskDeleteEntry: () -> Unit,
 ) {
+    val containerColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        } else {
+            MaterialTheme.colorScheme.surface
+        },
+        label = "compact_selection_color",
+    )
     Card(
         modifier = Modifier.combinedClickable(
-            onClick = { onOpenEntry(entry.id) },
-            onLongClick = onAskDeleteEntry,
+            onClick = {
+                if (selectionMode) onToggleSelection() else onOpenEntry(entry.id)
+            },
+            onLongClick = {
+                if (selectionMode) onToggleSelection() else onAskDeleteEntry()
+            },
         ),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = containerColor,
         ),
     ) {
         Row(
@@ -459,12 +663,16 @@ private fun CompactJournalEntryRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            if (selectionMode) {
+                SelectionStateBadge(selected = selected)
+            } else {
+                Text(
+                    text = order.toString(),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
             Text(
-                text = order.toString(),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text(
-                text = entry.primaryNumber ?: "Номер не найден",
+                text = entry.displayNumber(),
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontFamily = FontFamily.Monospace,
@@ -476,7 +684,7 @@ private fun CompactJournalEntryRow(
             )
             FilledTonalIconButton(
                 onClick = { entry.primaryNumber?.let(onCopy) },
-                enabled = !entry.primaryNumber.isNullOrBlank(),
+                enabled = !selectionMode && !entry.primaryNumber.isNullOrBlank(),
                 modifier = Modifier.size(34.dp),
             ) {
                 Icon(
@@ -486,6 +694,7 @@ private fun CompactJournalEntryRow(
             }
             FilledTonalIconButton(
                 onClick = onEdit,
+                enabled = !selectionMode,
                 modifier = Modifier.size(34.dp),
             ) {
                 Icon(
@@ -495,6 +704,7 @@ private fun CompactJournalEntryRow(
             }
             FilledTonalIconButton(
                 onClick = onMove,
+                enabled = !selectionMode,
                 modifier = Modifier.size(34.dp),
             ) {
                 Icon(
@@ -504,8 +714,9 @@ private fun CompactJournalEntryRow(
             }
             LoadStateToggleButton(
                 isLoaded = entry.isLoaded,
-                onClick = onToggleLoadState,
+                onClick = if (selectionMode) ({}) else onToggleLoadState,
                 modifier = Modifier.size(34.dp),
+                enabled = !selectionMode,
             )
         }
     }
@@ -513,15 +724,17 @@ private fun CompactJournalEntryRow(
 
 @Composable
 private fun EmptyJournalState(
+    metrics: HopperUiMetrics,
     onOpenCamera: () -> Unit,
+    onAddEmptyEntry: () -> Unit,
 ) {
     ElevatedCard {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(28.dp),
+                .padding(metrics.cardPadding + 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
         ) {
             Text(
                 text = "Журнал пока пуст",
@@ -532,13 +745,69 @@ private fun EmptyJournalState(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            FilledTonalIconButton(onClick = onOpenCamera) {
-                Icon(
-                    imageVector = Icons.Rounded.PhotoCamera,
-                    contentDescription = "Открыть камеру",
-                )
+            if (metrics.isCompact) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(metrics.smallSpacing),
+                ) {
+                    FilledTonalIconButton(
+                        onClick = onOpenCamera,
+                        modifier = Modifier.size(metrics.navButtonSize),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.PhotoCamera,
+                            contentDescription = "Открыть камеру",
+                        )
+                    }
+                    AddEmptyEntryButton(metrics = metrics, onClick = onAddEmptyEntry)
+                }
+            } else {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(metrics.smallSpacing + 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FilledTonalIconButton(
+                        onClick = onOpenCamera,
+                        modifier = Modifier.size(metrics.navButtonSize),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.PhotoCamera,
+                            contentDescription = "Открыть камеру",
+                        )
+                    }
+                    AddEmptyEntryButton(
+                        metrics = metrics,
+                        modifier = Modifier.weight(1f),
+                        onClick = onAddEmptyEntry,
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun AddEmptyEntryButton(
+    metrics: HopperUiMetrics,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FilledTonalButton(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(metrics.primaryActionHeight),
+        onClick = onClick,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Add,
+            contentDescription = null,
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "Добавить пустую карточку",
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -547,9 +816,12 @@ private fun JournalEntryCard(
     order: Int,
     numberFontSizeSp: Float,
     entry: WagonEntry,
+    selectionMode: Boolean,
+    selected: Boolean,
     onOpenEntry: (Long) -> Unit,
     onOpenPhoto: (Long) -> Unit,
     onCopy: (String) -> Unit,
+    onToggleSelection: () -> Unit,
     onEdit: () -> Unit,
     onMove: () -> Unit,
     onToggleLoadState: () -> Unit,
@@ -557,13 +829,25 @@ private fun JournalEntryCard(
     onAskDeleteEntry: () -> Unit,
     onAskPhotoActions: () -> Unit,
 ) {
+    val containerColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        } else {
+            MaterialTheme.colorScheme.surface
+        },
+        label = "card_selection_color",
+    )
     Card(
         modifier = Modifier.combinedClickable(
-            onClick = { onOpenEntry(entry.id) },
-            onLongClick = onAskDeleteEntry,
+            onClick = {
+                if (selectionMode) onToggleSelection() else onOpenEntry(entry.id)
+            },
+            onLongClick = {
+                if (selectionMode) onToggleSelection() else onAskDeleteEntry()
+            },
         ),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = containerColor,
         ),
     ) {
         Column(
@@ -587,31 +871,37 @@ private fun JournalEntryCard(
                         verticalAlignment = Alignment.Top,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                        ) {
-                            Box(
-                                modifier = Modifier.size(30.dp),
-                                contentAlignment = Alignment.Center,
+                        if (selectionMode) {
+                            SelectionStateBadge(selected = selected)
+                        } else {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primaryContainer,
                             ) {
-                                Text(
-                                    text = order.toString(),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                )
+                                Box(
+                                    modifier = Modifier.size(30.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = order.toString(),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    )
+                                }
                             }
                         }
                         Text(
-                            text = entry.primaryNumber ?: "Номер не найден",
-                            modifier = Modifier.weight(1f),
+                            text = entry.displayNumber(),
+                            modifier = Modifier
+                                .weight(1f)
+                                .marqueeWhenNeeded(),
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = numberFontSizeSp.sp,
                             ),
                             maxLines = 1,
                             softWrap = false,
-                            overflow = TextOverflow.Ellipsis,
+                            overflow = TextOverflow.Clip,
                         )
                     }
 
@@ -627,7 +917,7 @@ private fun JournalEntryCard(
                     ) {
                         FilledTonalIconButton(
                             onClick = { entry.primaryNumber?.let(onCopy) },
-                            enabled = !entry.primaryNumber.isNullOrBlank(),
+                            enabled = !selectionMode && !entry.primaryNumber.isNullOrBlank(),
                             modifier = Modifier.size(36.dp),
                         ) {
                             Icon(
@@ -638,6 +928,7 @@ private fun JournalEntryCard(
 
                         FilledTonalIconButton(
                             onClick = onEdit,
+                            enabled = !selectionMode,
                             modifier = Modifier.size(36.dp),
                         ) {
                             Icon(
@@ -647,6 +938,7 @@ private fun JournalEntryCard(
                         }
                         FilledTonalIconButton(
                             onClick = onMove,
+                            enabled = !selectionMode,
                             modifier = Modifier.size(36.dp),
                         ) {
                             Icon(
@@ -656,8 +948,9 @@ private fun JournalEntryCard(
                         }
                         LoadStateToggleButton(
                             isLoaded = entry.isLoaded,
-                            onClick = onToggleLoadState,
+                            onClick = if (selectionMode) ({}) else onToggleLoadState,
                             modifier = Modifier.size(36.dp),
+                            enabled = !selectionMode,
                         )
                     }
                 }
@@ -667,20 +960,26 @@ private fun JournalEntryCard(
                         .weight(0.52f)
                         .fillMaxHeight(),
                     imagePath = entry.imagePath,
-                    onOpenPhoto = { onOpenPhoto(entry.id) },
-                    onPhotoActions = onAskPhotoActions,
+                    onOpenPhoto = if (selectionMode) onToggleSelection else { { onOpenPhoto(entry.id) } },
+                    onPhotoActions = if (selectionMode) onToggleSelection else onAskPhotoActions,
                 )
             }
 
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = onEditNote),
+                    .clickable(
+                        onClick = if (selectionMode) {
+                            onToggleSelection
+                        } else {
+                            onEditNote
+                        },
+                    ),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
             ) {
                 Text(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    text = entry.note.ifBlank { "Добавить описание" },
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        text = entry.note.ifBlank { "Добавить описание" },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.labelLarge,
@@ -696,9 +995,11 @@ private fun LoadStateToggleButton(
     isLoaded: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     FilledTonalIconButton(
         onClick = onClick,
+        enabled = enabled,
         modifier = modifier,
         colors = IconButtonDefaults.filledTonalIconButtonColors(
             containerColor = if (isLoaded) LoadedStateGreen else EmptyStateBlue,
@@ -715,6 +1016,36 @@ private fun LoadStateToggleButton(
 }
 
 @Composable
+private fun SelectionStateBadge(
+    selected: Boolean,
+) {
+    Surface(
+        modifier = Modifier.size(30.dp),
+        shape = CircleShape,
+        color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+        border = BorderStroke(
+            width = 2.dp,
+            color = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.outline
+            },
+        ),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Rounded.Check,
+                    contentDescription = "Выбрано",
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun LoadStateSummary(
     emptyCount: Int,
     loadedCount: Int,
@@ -725,16 +1056,30 @@ private fun LoadStateSummary(
             .padding(horizontal = 12.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Text(
-            text = "Порожних: $emptyCount",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            text = "Груженых: $loadedCount",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = "Порожних:",
+                style = MaterialTheme.typography.bodyMedium,
+                color = EmptyStateBlue,
+            )
+            Text(
+                text = emptyCount.toString(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = "Груженых:",
+                style = MaterialTheme.typography.bodyMedium,
+                color = LoadedStateGreen,
+            )
+            Text(
+                text = loadedCount.toString(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -757,17 +1102,27 @@ private fun MoveEntryDialog(
         buildMovePreview(remainingEntries, entry, selectedSlot)
     }
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text("Переместить карточку")
-        },
-        text = {
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.94f),
+            shape = RoundedCornerShape(32.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 8.dp,
+            shadowElevation = 12.dp,
+        ) {
             Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 22.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Text(
-                    text = "Карточка временно убрана из списка. Нажмите в пустой промежуток, куда ее вставить.",
+                    text = "Переместить карточку",
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+                Text(
+                    text = "Нажмите в пустой промежуток, куда ее вставить.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -784,22 +1139,24 @@ private fun MoveEntryDialog(
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Отмена")
+                    }
+                    TextButton(
+                        onClick = { onMove(selectedSlot) },
+                        enabled = selectedSlot != currentIndex,
+                    ) {
+                        Text("Переместить")
+                    }
+                }
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onMove(selectedSlot) },
-                enabled = selectedSlot != currentIndex,
-            ) {
-                Text("Переместить")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Отмена")
-            }
-        },
-    )
+        }
+    }
 }
 
 @Composable
@@ -818,10 +1175,10 @@ private fun MoveEntrySlots(
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(260.dp),
+                .height(290.dp),
             state = listState,
             verticalArrangement = Arrangement.spacedBy(6.dp),
-            contentPadding = PaddingValues(vertical = 10.dp, horizontal = 8.dp),
+            contentPadding = PaddingValues(vertical = 8.dp, horizontal = 2.dp),
         ) {
             itemsIndexed(dialogItems, key = { _, item -> item.key }) { _, item ->
                 when (item) {
@@ -892,7 +1249,7 @@ private fun buildMoveDialogItems(
     val topLabel = if (entries.isEmpty()) {
         "Вставить как первую карточку"
     } else {
-        "Вставить перед ${entries.first().primaryNumber ?: "первой карточкой"}"
+        "Вставить перед ${entries.first().moveSlotReference(1)}"
     }
     items += MoveDialogItem.Slot(slotIndex = 0, label = topLabel)
 
@@ -904,9 +1261,9 @@ private fun buildMoveDialogItems(
 
         val nextItem = entries.getOrNull(index + 1)
         val slotLabel = if (nextItem != null) {
-            "Вставить между ${item.primaryNumber ?: "текущей карточкой"} и ${nextItem.primaryNumber ?: "следующей карточкой"}"
+            "Вставить между ${item.moveSlotReference(index + 1)} и ${nextItem.moveSlotReference(index + 2)}"
         } else {
-            "Вставить после ${item.primaryNumber ?: "последней карточки"}"
+            "Вставить после ${item.moveSlotReference(index + 1)}"
         }
         items += MoveDialogItem.Slot(
             slotIndex = index + 1,
@@ -961,7 +1318,7 @@ private fun MoveInsertionSlot(
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 18.dp)
+                            .padding(horizontal = 8.dp)
                             .height(3.dp),
                         shape = RoundedCornerShape(99.dp),
                         color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
@@ -973,7 +1330,77 @@ private fun MoveInsertionSlot(
 }
 
 @Composable
+private fun SelectionModeBar(
+    modifier: Modifier = Modifier,
+    selectedCount: Int,
+    allSelected: Boolean,
+    onSelectAll: () -> Unit,
+    onClearSelection: () -> Unit,
+    onDeleteSelection: () -> Unit,
+) {
+    ElevatedCard(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 10.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.defaultMinSize(minWidth = 40.dp),
+            ) {
+                Box(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = selectedCount.coerceAtMost(99).toString(),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onError,
+                        maxLines = 1,
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(4.dp))
+
+            TextButton(
+                onClick = onSelectAll,
+                enabled = !allSelected,
+            ) {
+                Text("Выбрать все")
+            }
+            TextButton(
+                onClick = onClearSelection,
+            ) {
+                Text("Отмена")
+            }
+            FilledTonalIconButton(
+                onClick = onDeleteSelection,
+                modifier = Modifier.size(42.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Delete,
+                    contentDescription = "Удалить выбранные карточки",
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun DirectionHeaderRow(
+    metrics: HopperUiMetrics,
     currentLabel: String,
     onToggleDirection: () -> Unit,
     onEdit: () -> Unit,
@@ -982,18 +1409,22 @@ private fun DirectionHeaderRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(metrics.smallSpacing),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         FilledTonalButton(
             modifier = Modifier.weight(1f),
             onClick = onToggleDirection,
         ) {
-            Text(currentLabel)
+            Text(
+                text = currentLabel,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         FilledTonalIconButton(
             onClick = onEdit,
-            modifier = Modifier.size(44.dp),
+            modifier = Modifier.size(metrics.largeIconButtonSize),
         ) {
             Icon(
                 imageVector = Icons.Rounded.Edit,
@@ -1005,16 +1436,21 @@ private fun DirectionHeaderRow(
 
 @Composable
 private fun BottomDirectionButton(
+    metrics: HopperUiMetrics,
     label: String,
     onToggleDirection: () -> Unit,
 ) {
     FilledTonalButton(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp),
+            .padding(horizontal = metrics.smallSpacing),
         onClick = onToggleDirection,
     ) {
-        Text(label)
+        Text(
+            text = label,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -1122,6 +1558,7 @@ private fun SendJournalDialog(
     onSendTextColumn: () -> Unit,
     onSendFileWithoutPhotos: () -> Unit,
     onSendFileWithPhotos: () -> Unit,
+    onSendQr: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1160,6 +1597,12 @@ private fun SendJournalDialog(
                     onClick = onSendFileWithPhotos,
                 ) {
                     Text("Файл Hopper с фото")
+                }
+                FilledTonalButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onSendQr,
+                ) {
+                    Text("QR-код Hopper")
                 }
             }
         },
@@ -1247,8 +1690,11 @@ private fun NoteDialog(
     onSave: (String) -> Unit,
 ) {
     var note by remember(initialValue) { mutableStateOf(initialValue) }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     AlertDialog(
+        modifier = Modifier.imePadding(),
         onDismissRequest = onDismiss,
         title = {
             Text("Описание вагона")
@@ -1264,7 +1710,13 @@ private fun NoteDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = { onSave(note.trim()) }) {
+            TextButton(
+                onClick = {
+                    focusManager.clearFocus(force = true)
+                    keyboardController?.hide()
+                    onSave(note.trim())
+                },
+            ) {
                 Text("Сохранить")
             }
         },
@@ -1325,6 +1777,7 @@ private fun EditNumberDialog(
 @Composable
 private fun ConfirmDeleteEntryDialog(
     onDismiss: () -> Unit,
+    onMultiDelete: () -> Unit,
     onConfirm: () -> Unit,
 ) {
     AlertDialog(
@@ -1334,6 +1787,41 @@ private fun ConfirmDeleteEntryDialog(
         },
         text = {
             Text("Карточка будет удалена. После этого останется кнопка вернуть на 5 секунд.")
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Удалить")
+            }
+        },
+        dismissButton = {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onMultiDelete) {
+                    Text("Удалить\nнесколько")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Отмена")
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun ConfirmDeleteMultipleDialog(
+    count: Int,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Удалить несколько карточек?")
+        },
+        text = {
+            Text("Будет удалено: $count. После этого останется кнопка вернуть на 5 секунд.")
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {
@@ -1361,11 +1849,17 @@ private fun PhotoActionsDialog(
             Text("Действия с фото")
         },
         text = {
-            Text("Можно удалить текущее фото или сразу снять новое на замену.")
+            Text(
+                if (hasPhoto) {
+                    "Можно удалить текущее фото или сразу снять новое на замену."
+                } else {
+                    "У этой карточки пока нет фото. Можно сразу открыть камеру и добавить его позже."
+                },
+            )
         },
         confirmButton = {
             TextButton(onClick = onReplacePhoto) {
-                Text("Заменить фото")
+                Text(if (hasPhoto) "Заменить фото" else "Добавить фото")
             }
         },
         dismissButton = {
@@ -1382,6 +1876,13 @@ private fun PhotoActionsDialog(
     )
 }
 
+private fun WagonEntry.displayNumber(): String {
+    return primaryNumber?.takeIf(String::isNotBlank) ?: "Без номера"
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+private fun Modifier.marqueeWhenNeeded(): Modifier = basicMarquee()
+
 private enum class CopyListFormat {
     Row,
     Column,
@@ -1389,7 +1890,7 @@ private enum class CopyListFormat {
 
 private fun buildPrimaryNumbers(
     entries: List<WagonEntry>,
-    settings: AppSettings,
+    collection: WagonCollection,
     format: CopyListFormat,
 ): String {
     val body = entries.mapNotNull { item ->
@@ -1403,23 +1904,23 @@ private fun buildPrimaryNumbers(
         separator = if (format == CopyListFormat.Row) " ; " else "\n",
     )
 
-    if (!settings.includeDirectionInCopy) {
+    if (!collection.includeDirectionInCopy) {
         return body
     }
 
     return when (format) {
         CopyListFormat.Row -> {
             if (body.isBlank()) {
-                "${settings.topDirectionLabel}; ${settings.bottomDirectionLabel}."
+                "${collection.topDirectionLabel}; ${collection.bottomDirectionLabel}."
             } else {
-                "${settings.topDirectionLabel}; $body; ${settings.bottomDirectionLabel}."
+                "${collection.topDirectionLabel}; $body; ${collection.bottomDirectionLabel}."
             }
         }
         CopyListFormat.Column -> {
             if (body.isBlank()) {
-                "${settings.topDirectionLabel};\n${settings.bottomDirectionLabel}."
+                "${collection.topDirectionLabel};\n${collection.bottomDirectionLabel}."
             } else {
-                "${settings.topDirectionLabel};\n$body\n${settings.bottomDirectionLabel}."
+                "${collection.topDirectionLabel};\n$body\n${collection.bottomDirectionLabel}."
             }
         }
     }
@@ -1431,17 +1932,32 @@ private fun buildMovePreview(
     slotIndex: Int,
 ): String {
     if (entries.isEmpty()) {
-        return "Карточка ${movingEntry.primaryNumber ?: ""} станет первой и единственной"
+        return "Карточка станет первой и единственной"
     }
 
     val boundedSlot = slotIndex.coerceIn(0, entries.size)
-    val previous = entries.getOrNull(boundedSlot - 1)?.primaryNumber
-    val next = entries.getOrNull(boundedSlot)?.primaryNumber
-    val movingNumber = movingEntry.primaryNumber ?: "без номера"
+    val previous = entries.getOrNull(boundedSlot - 1)
+    val next = entries.getOrNull(boundedSlot)
 
     return when {
-        boundedSlot == 0 -> "Карточка $movingNumber встанет первой, перед ${next ?: "списком"}"
-        boundedSlot == entries.size -> "Карточка $movingNumber встанет последней, после ${previous ?: "списка"}"
-        else -> "Карточка $movingNumber встанет между ${previous ?: "предыдущей"} и ${next ?: "следующей"}"
+        boundedSlot == 0 && next != null -> "Встанет перед ${next.moveSlotReference(1)}"
+        boundedSlot == entries.size && previous != null -> {
+            "Встанет после ${previous.moveSlotReference(entries.size)}"
+        }
+        previous != null && next != null -> {
+            val previousOrder = boundedSlot
+            val nextOrder = boundedSlot + 1
+            "Встанет между ${previous.moveSlotReference(previousOrder)} и ${next.moveSlotReference(nextOrder)}"
+        }
+        else -> "Карточка станет первой"
+    }
+}
+
+private fun WagonEntry.moveSlotReference(order: Int): String {
+    val number = primaryNumber?.takeIf(String::isNotBlank)
+    return if (number == null) {
+        order.toString()
+    } else {
+        "$order. $number"
     }
 }

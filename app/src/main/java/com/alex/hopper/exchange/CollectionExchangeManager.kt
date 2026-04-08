@@ -5,16 +5,23 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.net.Uri
+import android.util.Base64
 import androidx.core.content.FileProvider
 import androidx.exifinterface.media.ExifInterface
 import com.alex.hopper.data.CollectionSnapshot
 import com.alex.hopper.data.ImportedCollectionEntry
 import com.alex.hopper.data.RailRepository
+import com.alex.hopper.data.WagonCollection
+import com.alex.hopper.settings.NewEntryPosition
 import com.alex.hopper.storage.PhotoStorage
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
@@ -33,6 +40,18 @@ data class ImportedCollectionResult(
     val collectionId: Long,
     val collectionName: String,
     val entryCount: Int,
+)
+
+data class QrShareSession(
+    val collectionName: String,
+    val chunks: List<String>,
+)
+
+data class QrTransferChunk(
+    val transferId: String,
+    val index: Int,
+    val total: Int,
+    val data: String,
 )
 
 class CollectionExchangeManager(
@@ -90,6 +109,16 @@ class CollectionExchangeManager(
         )
     }
 
+    suspend fun createQrShareSession(collectionId: Long): QrShareSession = withContext(Dispatchers.IO) {
+        val snapshot = repository.getCollectionSnapshot(collectionId)
+            ?: error("Подборка для отправки не найдена")
+        val manifest = buildManifest(snapshot, emptyMap())
+        QrShareSession(
+            collectionName = snapshot.collection.name,
+            chunks = buildQrChunks(manifest),
+        )
+    }
+
     suspend fun importFromUri(uri: Uri): ImportedCollectionResult = withContext(Dispatchers.IO) {
         val importDirectory = File(context.cacheDir, IMPORT_DIRECTORY).apply { mkdirs() }
         val tempArchive = File(importDirectory, "import_${UUID.randomUUID()}$FILE_EXTENSION")
@@ -107,9 +136,8 @@ class CollectionExchangeManager(
                     .bufferedReader()
                     .use { it.readText() }
                 val payload = parseManifest(manifestText)
-
-                val importedEntries = payload.entries.mapIndexed { index, entry ->
-                    val importedPhotoPath = entry.photoFileName?.let { photoName ->
+                importPayload(payload) { entry ->
+                    entry.photoFileName?.let { photoName ->
                         val photoEntry = zipFile.getEntry("$PHOTOS_DIRECTORY/$photoName")
                             ?: error("В архиве не найдено фото $photoName")
                         val importedPhoto = photoStorage.createCaptureFile()
@@ -119,30 +147,7 @@ class CollectionExchangeManager(
                         importedPhotoFiles += importedPhoto
                         importedPhoto.absolutePath
                     }.orEmpty()
-
-                    ImportedCollectionEntry(
-                        positionIndex = index.toLong(),
-                        createdAt = entry.createdAt,
-                        imagePath = importedPhotoPath,
-                        primaryNumber = entry.primaryNumber,
-                        candidateNumbers = entry.candidateNumbers,
-                        recognizedText = entry.recognizedText,
-                        note = entry.note,
-                        isLoaded = entry.isLoaded,
-                    )
                 }
-
-                val importedCollectionId = repository.importTransferredCollection(
-                    name = payload.collectionName,
-                    description = payload.collectionDescription,
-                    entries = importedEntries,
-                )
-
-                ImportedCollectionResult(
-                    collectionId = importedCollectionId,
-                    collectionName = payload.collectionName,
-                    entryCount = importedEntries.size,
-                )
             }
         } catch (exception: Exception) {
             importedPhotoFiles.forEach(File::delete)
@@ -150,6 +155,53 @@ class CollectionExchangeManager(
         } finally {
             tempArchive.delete()
         }
+    }
+
+    suspend fun importFromQrChunks(chunks: Collection<String>): ImportedCollectionResult = withContext(Dispatchers.IO) {
+        val parsedChunks = chunks.map { rawChunk ->
+            parseQrChunk(rawChunk) ?: error("Некорректный QR-код Hopper")
+        }
+        require(parsedChunks.isNotEmpty()) {
+            "Не удалось прочитать QR-коды Hopper"
+        }
+
+        val transferId = parsedChunks.first().transferId
+        val totalChunks = parsedChunks.first().total
+        require(parsedChunks.all { it.transferId == transferId && it.total == totalChunks }) {
+            "Сканированы QR-коды из разных подборок"
+        }
+
+        val indexedChunks = parsedChunks.associateBy(QrTransferChunk::index)
+        require(indexedChunks.size == totalChunks) {
+            "Не хватает частей QR-кода: ${indexedChunks.size} из $totalChunks"
+        }
+
+        val encodedPayload = buildString {
+            for (index in 1..totalChunks) {
+                append(indexedChunks[index]?.data ?: error("Не найдена часть $index"))
+            }
+        }
+        val manifestText = decodeQrPayload(encodedPayload)
+        importPayload(parseManifest(manifestText))
+    }
+
+    fun parseQrChunk(rawValue: String): QrTransferChunk? {
+        if (!rawValue.startsWith(QR_PREFIX)) return null
+        val parts = rawValue.split(QR_DELIMITER, limit = 5)
+        if (parts.size != 5) return null
+
+        val transferId = parts[1].takeIf(String::isNotBlank) ?: return null
+        val index = parts[2].toIntOrNull() ?: return null
+        val total = parts[3].toIntOrNull() ?: return null
+        val data = parts[4].takeIf(String::isNotBlank) ?: return null
+        if (index !in 1..total || total <= 0) return null
+
+        return QrTransferChunk(
+            transferId = transferId,
+            index = index,
+            total = total,
+            data = data,
+        )
     }
 
     private fun buildPhotoNames(
@@ -195,10 +247,96 @@ class CollectionExchangeManager(
                 JSONObject().apply {
                     put("name", snapshot.collection.name)
                     put("description", snapshot.collection.description)
+                    put("primaryDirectionLabel", snapshot.collection.primaryDirectionLabel)
+                    put("secondaryDirectionLabel", snapshot.collection.secondaryDirectionLabel)
+                    put("isPrimaryDirectionOnTop", snapshot.collection.isPrimaryDirectionOnTop)
+                    put("newEntryPosition", snapshot.collection.newEntryPosition.name)
+                    put("includeDirectionInCopy", snapshot.collection.includeDirectionInCopy)
                 },
             )
             put("entries", entriesJson)
         }.toString(2)
+    }
+
+    private suspend fun importPayload(
+        payload: TransferPayload,
+        resolvePhotoPath: suspend (TransferEntryPayload) -> String = { "" },
+    ): ImportedCollectionResult {
+        val importedEntries = payload.entries.mapIndexed { index, entry ->
+            ImportedCollectionEntry(
+                positionIndex = index.toLong(),
+                createdAt = entry.createdAt,
+                imagePath = resolvePhotoPath(entry),
+                primaryNumber = entry.primaryNumber,
+                candidateNumbers = entry.candidateNumbers,
+                recognizedText = entry.recognizedText,
+                note = entry.note,
+                isLoaded = entry.isLoaded,
+            )
+        }
+
+        val importedCollectionId = repository.importTransferredCollection(
+            name = payload.collectionName,
+            description = payload.collectionDescription,
+            primaryDirectionLabel = payload.primaryDirectionLabel,
+            secondaryDirectionLabel = payload.secondaryDirectionLabel,
+            isPrimaryDirectionOnTop = payload.isPrimaryDirectionOnTop,
+            newEntryPosition = payload.newEntryPosition,
+            includeDirectionInCopy = payload.includeDirectionInCopy,
+            entries = importedEntries,
+        )
+
+        return ImportedCollectionResult(
+            collectionId = importedCollectionId,
+            collectionName = payload.collectionName,
+            entryCount = importedEntries.size,
+        )
+    }
+
+    private fun buildQrChunks(manifest: String): List<String> {
+        val compressed = gzip(manifest.toByteArray(Charsets.UTF_8))
+        val encodedPayload = Base64.encodeToString(
+            compressed,
+            Base64.NO_WRAP or Base64.URL_SAFE,
+        )
+        val transferId = UUID.randomUUID().toString().substringBefore('-')
+        val totalChunks = encodedPayload.length
+            .let { length ->
+                if (length == 0) 1 else ((length - 1) / QR_CHUNK_DATA_SIZE) + 1
+            }
+
+        return buildList(totalChunks) {
+            repeat(totalChunks) { index ->
+                val start = index * QR_CHUNK_DATA_SIZE
+                val end = minOf(encodedPayload.length, start + QR_CHUNK_DATA_SIZE)
+                val chunk = encodedPayload.substring(start, end)
+                add(
+                    listOf(
+                        QR_PREFIX,
+                        transferId,
+                        (index + 1).toString(),
+                        totalChunks.toString(),
+                        chunk,
+                    ).joinToString(QR_DELIMITER),
+                )
+            }
+        }
+    }
+
+    private fun decodeQrPayload(encodedPayload: String): String {
+        val compressed = Base64.decode(encodedPayload, Base64.NO_WRAP or Base64.URL_SAFE)
+        val uncompressed = GZIPInputStream(ByteArrayInputStream(compressed)).use { input ->
+            input.readBytes()
+        }
+        return uncompressed.toString(Charsets.UTF_8)
+    }
+
+    private fun gzip(input: ByteArray): ByteArray {
+        val byteStream = ByteArrayOutputStream()
+        GZIPOutputStream(byteStream).use { output ->
+            output.write(input)
+        }
+        return byteStream.toByteArray()
     }
 
     private fun writeCompressedPhoto(
@@ -267,7 +405,7 @@ class CollectionExchangeManager(
     private fun parseManifest(json: String): TransferPayload {
         val root = JSONObject(json)
         val formatVersion = root.optInt("formatVersion", -1)
-        require(formatVersion == FORMAT_VERSION) {
+        require(formatVersion in SUPPORTED_FORMAT_VERSIONS) {
             "Эта версия Hopper не поддерживает такой файл"
         }
 
@@ -303,6 +441,20 @@ class CollectionExchangeManager(
         return TransferPayload(
             collectionName = collection.optString("name").ifBlank { "Подборка" },
             collectionDescription = collection.optString("description"),
+            primaryDirectionLabel = collection.optString("primaryDirectionLabel").ifBlank {
+                WagonCollection.DEFAULT_PRIMARY_DIRECTION_LABEL
+            },
+            secondaryDirectionLabel = collection.optString("secondaryDirectionLabel").ifBlank {
+                WagonCollection.DEFAULT_SECONDARY_DIRECTION_LABEL
+            },
+            isPrimaryDirectionOnTop = collection.optBoolean("isPrimaryDirectionOnTop", true),
+            newEntryPosition = collection.optString("newEntryPosition")
+                .takeIf(String::isNotBlank)
+                ?.let { stored ->
+                    NewEntryPosition.entries.firstOrNull { it.name == stored }
+                }
+                ?: NewEntryPosition.Last,
+            includeDirectionInCopy = collection.optBoolean("includeDirectionInCopy", true),
             entries = entries,
         )
     }
@@ -330,6 +482,11 @@ class CollectionExchangeManager(
     private data class TransferPayload(
         val collectionName: String,
         val collectionDescription: String,
+        val primaryDirectionLabel: String,
+        val secondaryDirectionLabel: String,
+        val isPrimaryDirectionOnTop: Boolean,
+        val newEntryPosition: NewEntryPosition,
+        val includeDirectionInCopy: Boolean,
         val entries: List<TransferEntryPayload>,
     )
 
@@ -347,10 +504,14 @@ class CollectionExchangeManager(
         const val MIME_TYPE = "application/vnd.com.alex.hopper.collection"
         const val FILE_EXTENSION = ".hopper"
 
-        private const val FORMAT_VERSION = 1
+        private const val FORMAT_VERSION = 2
+        private val SUPPORTED_FORMAT_VERSIONS = setOf(1, 2)
         private const val MANIFEST_NAME = "manifest.json"
         private const val PHOTOS_DIRECTORY = "photos"
         private const val EXPORT_DIRECTORY = "shared_collections"
         private const val IMPORT_DIRECTORY = "imported_collections"
+        private const val QR_PREFIX = "HQR1"
+        private const val QR_DELIMITER = "|"
+        private const val QR_CHUNK_DATA_SIZE = 700
     }
 }

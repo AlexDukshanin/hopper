@@ -8,8 +8,11 @@ import kotlin.math.roundToInt
 
 enum class AppThemeMode {
     SupabaseDark,
+    RaycastDark,
+    ComposioDark,
+    NvidiaDark,
+    MongoDark,
     StripeStyle,
-    AirbnbStyle,
     HybridClean,
 }
 
@@ -23,8 +26,20 @@ enum class CollectionLayoutMode {
     List,
 }
 
+private const val DEFAULT_SCAN_FRAME_WIDTH = 1.0f
+private const val DEFAULT_SCAN_FRAME_HEIGHT = 0.255f
+private const val DEFAULT_SCAN_FRAME_TOP = 0.30f
+private const val DEFAULT_SCAN_FRAME_LEFT = 0f
+
+data class ScanFrameSettings(
+    val leftFraction: Float = DEFAULT_SCAN_FRAME_LEFT,
+    val widthFraction: Float = DEFAULT_SCAN_FRAME_WIDTH,
+    val heightFraction: Float = DEFAULT_SCAN_FRAME_HEIGHT,
+    val topFraction: Float = DEFAULT_SCAN_FRAME_TOP,
+)
+
 data class AppSettings(
-    val themeMode: AppThemeMode = AppThemeMode.HybridClean,
+    val themeMode: AppThemeMode = AppThemeMode.RaycastDark,
     val appIconMode: AppIconMode = AppIconMode.Yellow,
     val numberFontSizeSp: Float = 25f,
     val primaryDirectionLabel: String = "ЗАПАД",
@@ -37,12 +52,24 @@ data class AppSettings(
     val collectionLayoutMode: CollectionLayoutMode = CollectionLayoutMode.Grid,
     val photoQualityJpeg: Int = 72,
     val sharePhotoQualityJpeg: Int = 60,
+    val scanFrameLeftFraction: Float = DEFAULT_SCAN_FRAME_LEFT,
+    val scanFrameWidthFraction: Float = DEFAULT_SCAN_FRAME_WIDTH,
+    val scanFrameHeightFraction: Float = DEFAULT_SCAN_FRAME_HEIGHT,
+    val scanFrameTopFraction: Float = DEFAULT_SCAN_FRAME_TOP,
 ) {
     val topDirectionLabel: String
         get() = if (isPrimaryDirectionOnTop) primaryDirectionLabel else secondaryDirectionLabel
 
     val bottomDirectionLabel: String
         get() = if (isPrimaryDirectionOnTop) secondaryDirectionLabel else primaryDirectionLabel
+
+    val scanFrameSettings: ScanFrameSettings
+        get() = ScanFrameSettings(
+            leftFraction = scanFrameLeftFraction,
+            widthFraction = scanFrameWidthFraction,
+            heightFraction = scanFrameHeightFraction,
+            topFraction = scanFrameTopFraction,
+        )
 }
 
 class UserSettingsRepository(
@@ -144,19 +171,82 @@ class UserSettingsRepository(
         _settings.value = loadSettings()
     }
 
+    fun setScanFrameWidthFraction(value: Float) {
+        preferences.edit()
+            .putFloat(KEY_SCAN_FRAME_WIDTH, value.coerceIn(MIN_SCAN_FRAME_WIDTH, MAX_SCAN_FRAME_WIDTH))
+            .apply()
+        _settings.value = loadSettings()
+    }
+
+    fun setScanFrameLeftFraction(value: Float) {
+        val widthFraction = _settings.value.scanFrameWidthFraction
+        preferences.edit()
+            .putFloat(KEY_SCAN_FRAME_LEFT, value.coerceIn(0f, (1f - widthFraction).coerceAtLeast(0f)))
+            .apply()
+        _settings.value = loadSettings()
+    }
+
+    fun setScanFrameHeightFraction(value: Float) {
+        preferences.edit()
+            .putFloat(KEY_SCAN_FRAME_HEIGHT, value.coerceIn(MIN_SCAN_FRAME_HEIGHT, MAX_SCAN_FRAME_HEIGHT))
+            .apply()
+        _settings.value = loadSettings()
+    }
+
+    fun setScanFrameTopFraction(value: Float) {
+        preferences.edit()
+            .putFloat(KEY_SCAN_FRAME_TOP, value.coerceIn(MIN_SCAN_FRAME_TOP, MAX_SCAN_FRAME_TOP))
+            .apply()
+        _settings.value = loadSettings()
+    }
+
+    fun setScanFrameSettings(scanFrameSettings: ScanFrameSettings) {
+        val widthFraction = scanFrameSettings.widthFraction.coerceIn(MIN_SCAN_FRAME_WIDTH, MAX_SCAN_FRAME_WIDTH)
+        val heightFraction = scanFrameSettings.heightFraction.coerceIn(MIN_SCAN_FRAME_HEIGHT, MAX_SCAN_FRAME_HEIGHT)
+        val leftFraction = scanFrameSettings.leftFraction.coerceIn(0f, (1f - widthFraction).coerceAtLeast(0f))
+        val topFraction = scanFrameSettings.topFraction.coerceIn(MIN_SCAN_FRAME_TOP, (1f - heightFraction).coerceAtLeast(MIN_SCAN_FRAME_TOP))
+        preferences.edit()
+            .putFloat(KEY_SCAN_FRAME_LEFT, leftFraction)
+            .putFloat(KEY_SCAN_FRAME_WIDTH, widthFraction)
+            .putFloat(KEY_SCAN_FRAME_HEIGHT, heightFraction)
+            .putFloat(KEY_SCAN_FRAME_TOP, topFraction)
+            .apply()
+        _settings.value = loadSettings()
+    }
+
+    fun resetScanFrameSettings() {
+        setScanFrameSettings(ScanFrameSettings())
+    }
+
+    fun hasMigratedCollectionScopedJournalSettings(): Boolean =
+        preferences.getBoolean(KEY_COLLECTION_SCOPED_JOURNAL_SETTINGS_MIGRATED, false)
+
+    fun markCollectionScopedJournalSettingsMigrated() {
+        preferences.edit()
+            .putBoolean(KEY_COLLECTION_SCOPED_JOURNAL_SETTINGS_MIGRATED, true)
+            .apply()
+    }
+
     private fun loadSettings(): AppSettings {
-        val themeMode = when (preferences.getString(KEY_THEME_MODE, AppThemeMode.HybridClean.name)) {
+        val themeMode = when (preferences.getString(KEY_THEME_MODE, AppThemeMode.RaycastDark.name)) {
             "VercelStyle",
             "AppleLight",
             "AirtableLight",
             "FigmaLight",
+            "AirbnbStyle",
             null,
-            -> AppThemeMode.HybridClean
+            -> AppThemeMode.RaycastDark
+            "LinearDark" -> AppThemeMode.RaycastDark
+            "SentryDark" -> AppThemeMode.ComposioDark
+            "ClickHouseDark" -> AppThemeMode.NvidiaDark
             AppThemeMode.SupabaseDark.name -> AppThemeMode.SupabaseDark
+            AppThemeMode.RaycastDark.name -> AppThemeMode.RaycastDark
+            AppThemeMode.ComposioDark.name -> AppThemeMode.ComposioDark
+            AppThemeMode.NvidiaDark.name -> AppThemeMode.NvidiaDark
+            AppThemeMode.MongoDark.name -> AppThemeMode.MongoDark
             AppThemeMode.StripeStyle.name -> AppThemeMode.StripeStyle
-            AppThemeMode.AirbnbStyle.name -> AppThemeMode.AirbnbStyle
             AppThemeMode.HybridClean.name -> AppThemeMode.HybridClean
-            else -> AppThemeMode.HybridClean
+            else -> AppThemeMode.RaycastDark
         }
 
         val appIconMode = preferences.getString(KEY_APP_ICON_MODE, AppIconMode.Yellow.name)
@@ -201,6 +291,17 @@ class UserSettingsRepository(
             .roundToInt()
             .toFloat()
 
+        val scanFrameWidthFraction = preferences.getFloat(KEY_SCAN_FRAME_WIDTH, DEFAULT_SCAN_FRAME_WIDTH)
+            .coerceIn(MIN_SCAN_FRAME_WIDTH, MAX_SCAN_FRAME_WIDTH)
+        val scanFrameHeightFraction = preferences.getFloat(KEY_SCAN_FRAME_HEIGHT, DEFAULT_SCAN_FRAME_HEIGHT)
+            .coerceIn(MIN_SCAN_FRAME_HEIGHT, MAX_SCAN_FRAME_HEIGHT)
+        val scanFrameLeftFraction = preferences.getFloat(
+            KEY_SCAN_FRAME_LEFT,
+            ((1f - scanFrameWidthFraction) / 2f).coerceAtLeast(0f),
+        ).coerceIn(0f, (1f - scanFrameWidthFraction).coerceAtLeast(0f))
+        val scanFrameTopFraction = preferences.getFloat(KEY_SCAN_FRAME_TOP, DEFAULT_SCAN_FRAME_TOP)
+            .coerceIn(MIN_SCAN_FRAME_TOP, (1f - scanFrameHeightFraction).coerceAtLeast(MIN_SCAN_FRAME_TOP))
+
         return AppSettings(
             themeMode = themeMode,
             appIconMode = appIconMode,
@@ -217,6 +318,10 @@ class UserSettingsRepository(
             collectionLayoutMode = collectionLayoutMode,
             photoQualityJpeg = photoQualityJpeg,
             sharePhotoQualityJpeg = sharePhotoQualityJpeg,
+            scanFrameLeftFraction = scanFrameLeftFraction,
+            scanFrameWidthFraction = scanFrameWidthFraction,
+            scanFrameHeightFraction = scanFrameHeightFraction,
+            scanFrameTopFraction = scanFrameTopFraction,
         )
     }
 
@@ -236,6 +341,12 @@ class UserSettingsRepository(
         const val KEY_PHOTO_QUALITY_MODE = "photo_quality_mode"
         const val KEY_PHOTO_QUALITY_JPEG = "photo_quality_jpeg"
         const val KEY_SHARE_PHOTO_QUALITY_JPEG = "share_photo_quality_jpeg"
+        const val KEY_SCAN_FRAME_LEFT = "scan_frame_left_fraction"
+        const val KEY_SCAN_FRAME_WIDTH = "scan_frame_width_fraction"
+        const val KEY_SCAN_FRAME_HEIGHT = "scan_frame_height_fraction"
+        const val KEY_SCAN_FRAME_TOP = "scan_frame_top_fraction"
+        const val KEY_COLLECTION_SCOPED_JOURNAL_SETTINGS_MIGRATED =
+            "collection_scoped_journal_settings_migrated"
 
         const val DEFAULT_PRIMARY_LABEL = "ЗАПАД"
         const val DEFAULT_SECONDARY_LABEL = "ВОСТОК"
@@ -245,5 +356,11 @@ class UserSettingsRepository(
         const val MAX_PHOTO_QUALITY_JPEG = 92
         const val DEFAULT_PHOTO_QUALITY_JPEG = 72
         const val DEFAULT_SHARE_PHOTO_QUALITY_JPEG = 60
+        const val MIN_SCAN_FRAME_WIDTH = 0.7f
+        const val MAX_SCAN_FRAME_WIDTH = 1.0f
+        const val MIN_SCAN_FRAME_HEIGHT = 0.16f
+        const val MAX_SCAN_FRAME_HEIGHT = 0.42f
+        const val MIN_SCAN_FRAME_TOP = 0.02f
+        const val MAX_SCAN_FRAME_TOP = 0.5f
     }
 }

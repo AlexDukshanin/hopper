@@ -19,17 +19,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -44,9 +45,10 @@ import androidx.compose.ui.unit.dp
 import com.alex.hopper.data.CollectionSummary
 import com.alex.hopper.data.WagonCollection
 import com.alex.hopper.data.WagonEntry
+import com.alex.hopper.ui.HopperUiMetrics
+import com.alex.hopper.ui.rememberHopperUiMetrics
 import com.alex.hopper.util.formatTimestamp
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
     isGlobalSearch: Boolean,
@@ -58,7 +60,9 @@ fun SearchScreen(
     onOpenCollection: (Long) -> Unit,
     onOpenEntry: (WagonEntry) -> Unit,
 ) {
+    val metrics = rememberHopperUiMetrics()
     var query by rememberSaveable { mutableStateOf("") }
+    var helpDialogVisible by rememberSaveable { mutableStateOf(false) }
     val trimmedQuery = query.trim()
     val collectionsById = remember(collections) { collections.associateBy { it.id } }
     val entryOrdersById = remember(entries) {
@@ -100,42 +104,68 @@ fun SearchScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(
+            start = metrics.horizontalPadding,
+            end = metrics.horizontalPadding,
+            top = metrics.smallSpacing,
+            bottom = metrics.verticalPadding,
+        ),
+        verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
     ) {
         item {
-            CenterAlignedTopAppBar(
-                title = {
-                    Text(if (isGlobalSearch) "Поиск по всем подборкам" else "Поиск внутри подборки")
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "Назад",
-                        )
-                    }
-                },
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(metrics.smallSpacing),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Назад",
+                    )
+                }
+                Text(
+                    text = if (isGlobalSearch) "Общий поиск" else "Поиск внутренний",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.headlineSmall.copy(
+                        fontSize = metrics.screenTitleSize,
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                IconButton(onClick = { helpDialogVisible = true }) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.HelpOutline,
+                        contentDescription = "Справка по поиску",
+                    )
+                }
+            }
         }
 
         item {
             ElevatedCard {
                 Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(
+                        horizontal = metrics.cardPadding,
+                        vertical = metrics.cardPadding - 2.dp,
+                    ),
                 ) {
                     OutlinedTextField(
                         modifier = Modifier.fillMaxWidth(),
                         value = query,
                         onValueChange = { query = it.take(80) },
                         singleLine = true,
-                        label = {
+                        placeholder = {
                             Text(
-                                if (isGlobalSearch) {
-                                    "Искать подборки, описания и вагоны"
+                                text = "Введите данные",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = if (metrics.isCompact) {
+                                    MaterialTheme.typography.bodySmall
                                 } else {
-                                    "Искать внутри журнала"
+                                    MaterialTheme.typography.bodyMedium
                                 },
                             )
                         },
@@ -146,15 +176,6 @@ fun SearchScreen(
                             )
                         },
                     )
-                    Text(
-                        text = if (isGlobalSearch) {
-                            "Поиск по названиям подборок, их описанию, описаниям вагонов и номерам."
-                        } else {
-                            "Поиск только внутри текущей подборки по описанию журнала, заметкам и номерам вагонов."
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
             }
         }
@@ -162,6 +183,7 @@ fun SearchScreen(
         if (trimmedQuery.isBlank()) {
             item {
                 SearchHintCard(
+                    metrics = metrics,
                     text = if (isGlobalSearch) {
                         "Введите номер вагона, текст заметки или название подборки."
                     } else {
@@ -215,26 +237,79 @@ fun SearchScreen(
             if (matchingCollections.isEmpty() && matchingEntries.isEmpty() && matchingJournal == null) {
                 item {
                     SearchHintCard(
+                        metrics = metrics,
                         text = "Ничего не найдено. Попробуйте другой номер или текст.",
                     )
                 }
             }
         }
     }
+
+    if (helpDialogVisible) {
+        SearchHelpDialog(
+            isGlobalSearch = isGlobalSearch,
+            onDismiss = { helpDialogVisible = false },
+        )
+    }
 }
 
 @Composable
 private fun SearchHintCard(
+    metrics: HopperUiMetrics,
     text: String,
 ) {
     ElevatedCard {
         Text(
-            modifier = Modifier.padding(18.dp),
+            modifier = Modifier.padding(metrics.cardPadding),
             text = text,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+@Composable
+private fun SearchHelpDialog(
+    isGlobalSearch: Boolean,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                if (isGlobalSearch) {
+                    "Как работает поиск по всем подборкам"
+                } else {
+                    "Как работает поиск внутри подборки"
+                },
+            )
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (isGlobalSearch) {
+                    Text("1. Поиск идет сразу по всем подборкам приложения.")
+                    Text("2. Совпадения ищутся в названии подборки, ее описании, номерах вагонов и заметках карточек.")
+                    Text("3. В результатах можно открыть и всю подборку, и конкретную карточку.")
+                } else {
+                    Text("1. Поиск работает только внутри текущей подборки.")
+                    Text("2. Совпадения ищутся по описанию журнала, заметкам, распознанному тексту и номерам вагонов.")
+                    Text("3. Результаты открывают карточки только из этой подборки.")
+                }
+                Text(
+                    text = "Порядковый номер карточки показывается рядом с результатом, но в сам поиск не входит.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Понятно")
+            }
+        },
+    )
 }
 
 @Composable

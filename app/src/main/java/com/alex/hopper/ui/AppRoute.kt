@@ -25,6 +25,12 @@ sealed class AppRoute(val route: String) {
 
     data object Settings : AppRoute("settings")
 
+    data object ScanFrameEditor : AppRoute("settings/scan-frame-editor")
+
+    data object ShareQr : AppRoute("share/qr")
+
+    data object ImportQr : AppRoute("import/qr")
+
     data object ReplacePhoto : AppRoute("camera/replace/{entryId}") {
         const val entryIdArg = "entryId"
 

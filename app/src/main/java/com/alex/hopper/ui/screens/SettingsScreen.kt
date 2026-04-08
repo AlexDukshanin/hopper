@@ -1,8 +1,10 @@
 package com.alex.hopper.ui.screens
 
+import android.widget.ImageView
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -33,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -40,15 +43,27 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import com.alex.hopper.R
+import com.alex.hopper.data.WagonCollection
 import com.alex.hopper.settings.AppIconMode
 import com.alex.hopper.settings.AppSettings
 import com.alex.hopper.settings.AppThemeMode
 import com.alex.hopper.settings.NewEntryPosition
+import com.alex.hopper.ui.HopperUiMetrics
+import com.alex.hopper.ui.rememberHopperUiMetrics
 import kotlin.math.roundToInt
+
+enum class SettingsMode {
+    Home,
+    Journal,
+}
 
 @Composable
 fun SettingsScreen(
     settings: AppSettings,
+    journalCollection: WagonCollection?,
+    mode: SettingsMode,
     contentPadding: PaddingValues,
     onSelectTheme: (AppThemeMode) -> Unit,
     onSelectAppIcon: (AppIconMode) -> Unit,
@@ -57,14 +72,20 @@ fun SettingsScreen(
     onIncludeDirectionInCopyChange: (Boolean) -> Unit,
     onPhotoQualityChange: (Int) -> Unit,
     onSharePhotoQualityChange: (Int) -> Unit,
+    onOpenScanFrameEditor: () -> Unit,
 ) {
+    val metrics = rememberHopperUiMetrics()
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val versionLabel = remember(context) { context.resolveAppVersionLabel() }
+    val isHomeMode = mode == SettingsMode.Home
+    val activeJournalCollection = journalCollection.takeIf { mode == SettingsMode.Journal }
+
     var photoQualitySliderValue by remember(settings.photoQualityJpeg) {
         mutableFloatStateOf(settings.photoQualityJpeg.toFloat())
     }
     val currentPhotoQuality = photoQualitySliderValue.roundToInt().coerceIn(60, 92)
+
     var sharePhotoQualitySliderValue by remember(settings.sharePhotoQualityJpeg) {
         mutableFloatStateOf(settings.sharePhotoQualityJpeg.toFloat())
     }
@@ -74,21 +95,35 @@ fun SettingsScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(
+            horizontal = metrics.horizontalPadding,
+            vertical = metrics.verticalPadding,
+        ),
+        verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
     ) {
         item {
-            ElevatedCard {
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+            ) {
                 Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    modifier = Modifier.padding(metrics.cardPadding),
+                    verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
                 ) {
                     Text(
-                        text = "Настройки",
-                        style = MaterialTheme.typography.headlineMedium,
+                        text = if (isHomeMode) "Общие настройки" else "Настройки журнала",
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontSize = metrics.screenTitleSize,
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = "Выберите оформление и настройте размер номера в карточке.",
+                        text = if (isHomeMode) {
+                            "Эти параметры влияют на все приложение, камеру и внешний вид карточек."
+                        } else {
+                            activeJournalCollection?.name
+                                ?: "Подождите секунду, пока откроются настройки выбранной подборки."
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -96,191 +131,391 @@ fun SettingsScreen(
             }
         }
 
-        item {
-            ElevatedCard {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
+        if (mode == SettingsMode.Journal && activeJournalCollection == null) {
+            item {
+                ElevatedCard(
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(
-                        text = "Качество фото",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        text = "Для съемки и отправки можно задать разное сжатие.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    PhotoQualitySliderCard(
-                        title = "Обычное фото",
-                        helperText = "Влияет на новые снимки в журнале. Чем ниже качество, тем меньше размер файла.",
-                        currentQuality = currentPhotoQuality,
-                        sliderValue = photoQualitySliderValue,
-                        onSliderChange = { photoQualitySliderValue = it },
-                        onSliderSave = {
-                            if (currentPhotoQuality != settings.photoQualityJpeg) {
-                                onPhotoQualityChange(currentPhotoQuality)
-                            }
-                        },
-                    )
-                    PhotoQualitySliderCard(
-                        title = "Фото при отправке",
-                        helperText = "Используется только для файла Hopper с фото. Оригиналы в журнале не меняются.",
-                        currentQuality = currentSharePhotoQuality,
-                        sliderValue = sharePhotoQualitySliderValue,
-                        onSliderChange = { sharePhotoQualitySliderValue = it },
-                        onSliderSave = {
-                            if (currentSharePhotoQuality != settings.sharePhotoQualityJpeg) {
-                                onSharePhotoQualityChange(currentSharePhotoQuality)
-                            }
-                        },
-                    )
-                }
-            }
-        }
-
-        item {
-            ElevatedCard {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(
-                        text = "Иконка приложения",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        text = "Выберите желтую, серую или зеленую иконку для рабочего стола.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    Column(
+                        modifier = Modifier.padding(metrics.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
                     ) {
-                        IconOptionCard(
-                            modifier = Modifier.weight(1f),
-                            title = "Желтая",
-                            previewColor = Color(0xFFF1C40F),
-                            selected = settings.appIconMode == AppIconMode.Yellow,
-                            onClick = { onSelectAppIcon(AppIconMode.Yellow) },
+                        Text(
+                            text = "Подборка загружается...",
+                            style = MaterialTheme.typography.titleMedium,
                         )
-                        IconOptionCard(
-                            modifier = Modifier.weight(1f),
-                            title = "Серая",
-                            previewColor = Color(0xFF9CA3AF),
-                            selected = settings.appIconMode == AppIconMode.Gray,
-                            onClick = { onSelectAppIcon(AppIconMode.Gray) },
-                        )
-                        IconOptionCard(
-                            modifier = Modifier.weight(1f),
-                            title = "Зеленая",
-                            previewColor = Color(0xFF22C55E),
-                            selected = settings.appIconMode == AppIconMode.Green,
-                            onClick = { onSelectAppIcon(AppIconMode.Green) },
+                        Text(
+                            text = "Журналовые настройки будут доступны только для выбранной подборки.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
             }
         }
 
-        item {
-            ElevatedCard {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+        if (isHomeMode) {
+            item {
+                ElevatedCard(
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(
-                        text = "Темы",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    ThemeOptionCard(
-                        title = "Темная Supabase",
-                        subtitle = "Темная база с зеленым акцентом",
-                        swatches = listOf(
-                            Color(0xFF171717),
-                            Color(0xFF0F0F0F),
-                            Color(0xFF3ECF8E),
-                        ),
-                        selected = settings.themeMode == AppThemeMode.SupabaseDark,
-                        onClick = { onSelectTheme(AppThemeMode.SupabaseDark) },
-                    )
-                    ThemeOptionCard(
-                        title = "Stripe",
-                        subtitle = "Чистая светлая тема с фиолетово-синим акцентом",
-                        swatches = listOf(
-                            Color(0xFFF7F9FC),
-                            Color(0xFFFFFFFF),
-                            Color(0xFF635BFF),
-                        ),
-                        selected = settings.themeMode == AppThemeMode.StripeStyle,
-                        onClick = { onSelectTheme(AppThemeMode.StripeStyle) },
-                    )
-                    ThemeOptionCard(
-                        title = "Airbnb стиль",
-                        subtitle = "Теплый светлый интерфейс с коралловым акцентом",
-                        swatches = listOf(
-                            Color(0xFFFFF8F8),
-                            Color(0xFFFFFFFF),
-                            Color(0xFFFF5A5F),
-                        ),
-                        selected = settings.themeMode == AppThemeMode.AirbnbStyle,
-                        onClick = { onSelectTheme(AppThemeMode.AirbnbStyle) },
-                    )
-                    ThemeOptionCard(
-                        title = "Hybrid clean",
-                        subtitle = "Смешанный чистый стиль с холодными акцентами",
-                        swatches = listOf(
-                            Color(0xFFF4F7FB),
-                            Color(0xFFFFFFFF),
-                            Color(0xFF3A78F2),
-                        ),
-                        selected = settings.themeMode == AppThemeMode.HybridClean,
-                        onClick = { onSelectTheme(AppThemeMode.HybridClean) },
-                    )
+                    Column(
+                        modifier = Modifier.padding(metrics.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
+                    ) {
+                        Text(
+                            text = "Качество фото",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            text = "Для съемки и отправки можно задать разное сжатие.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        PhotoQualitySliderCard(
+                            metrics = metrics,
+                            title = "Обычное фото",
+                            helperText = "Влияет на новые снимки в журнале. Чем ниже качество, тем меньше размер файла.",
+                            currentQuality = currentPhotoQuality,
+                            sliderValue = photoQualitySliderValue,
+                            onSliderChange = { photoQualitySliderValue = it },
+                            onSliderSave = {
+                                if (currentPhotoQuality != settings.photoQualityJpeg) {
+                                    onPhotoQualityChange(currentPhotoQuality)
+                                }
+                            },
+                        )
+                        PhotoQualitySliderCard(
+                            metrics = metrics,
+                            title = "Фото при отправке",
+                            helperText = "Используется только для файла Hopper с фото. Оригиналы в журнале не меняются.",
+                            currentQuality = currentSharePhotoQuality,
+                            sliderValue = sharePhotoQualitySliderValue,
+                            onSliderChange = { sharePhotoQualitySliderValue = it },
+                            onSliderSave = {
+                                if (currentSharePhotoQuality != settings.sharePhotoQualityJpeg) {
+                                    onSharePhotoQualityChange(currentSharePhotoQuality)
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+
+            item {
+                ElevatedCard {
+                    Column(
+                        modifier = Modifier.padding(metrics.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
+                    ) {
+                        Text(
+                            text = "Рамка сканирования",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            text = "Откройте живое превью камеры и настройте рамку прямо пальцами на экране.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            ),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(metrics.cardPadding - 2.dp),
+                                verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
+                            ) {
+                                Text(
+                                    text = "Текущая рамка: ${settings.scanFrameWidthFraction.times(100).toInt()}% ширины, ${settings.scanFrameHeightFraction.times(100).toInt()}% высоты.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                FilledTonalButton(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(metrics.primaryActionHeight),
+                                    onClick = onOpenScanFrameEditor,
+                                ) {
+                                    Text(
+                                        text = "Настроить в камере",
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                ElevatedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(metrics.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
+                    ) {
+                        Text(
+                            text = "Иконка приложения",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            text = "Выберите желтую, серую или зеленую иконку для рабочего стола.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(metrics.smallSpacing),
+                        ) {
+                            IconOptionCard(
+                                modifier = Modifier.weight(1f),
+                                iconRes = R.mipmap.ic_launcher,
+                                selected = settings.appIconMode == AppIconMode.Yellow,
+                                onClick = { onSelectAppIcon(AppIconMode.Yellow) },
+                            )
+                            IconOptionCard(
+                                modifier = Modifier.weight(1f),
+                                iconRes = R.mipmap.ic_launcher_gray,
+                                selected = settings.appIconMode == AppIconMode.Gray,
+                                onClick = { onSelectAppIcon(AppIconMode.Gray) },
+                            )
+                            IconOptionCard(
+                                modifier = Modifier.weight(1f),
+                                iconRes = R.mipmap.ic_launcher_green,
+                                selected = settings.appIconMode == AppIconMode.Green,
+                                onClick = { onSelectAppIcon(AppIconMode.Green) },
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                ElevatedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(metrics.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
+                    ) {
+                        Text(
+                            text = "Темы",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        ThemeOptionCard(
+                            metrics = metrics,
+                            title = "Темная Supabase",
+                            subtitle = "Темная база с зеленым акцентом",
+                            swatches = listOf(
+                                Color(0xFF171717),
+                                Color(0xFF0F0F0F),
+                                Color(0xFF3ECF8E),
+                            ),
+                            selected = settings.themeMode == AppThemeMode.SupabaseDark,
+                            onClick = { onSelectTheme(AppThemeMode.SupabaseDark) },
+                        )
+                        ThemeOptionCard(
+                            metrics = metrics,
+                            title = "Raycast dark",
+                            subtitle = "Мягкая графитовая тема с аккуратными синими и красными акцентами",
+                            swatches = listOf(
+                                Color(0xFF07080A),
+                                Color(0xFF101111),
+                                Color(0xFF55B3FF),
+                            ),
+                            selected = settings.themeMode == AppThemeMode.RaycastDark,
+                            onClick = { onSelectTheme(AppThemeMode.RaycastDark) },
+                        )
+                        ThemeOptionCard(
+                            metrics = metrics,
+                            title = "Composio dark",
+                            subtitle = "Темная техно-тема с холодными cyan и blue акцентами",
+                            swatches = listOf(
+                                Color(0xFF0F0F0F),
+                                Color(0xFF000000),
+                                Color(0xFF00FFFF),
+                            ),
+                            selected = settings.themeMode == AppThemeMode.ComposioDark,
+                            onClick = { onSelectTheme(AppThemeMode.ComposioDark) },
+                        )
+                        ThemeOptionCard(
+                            metrics = metrics,
+                            title = "NVIDIA dark",
+                            subtitle = "Строгая черно-серая тема с фирменным зеленым акцентом",
+                            swatches = listOf(
+                                Color(0xFF000000),
+                                Color(0xFF1A1A1A),
+                                Color(0xFF76B900),
+                            ),
+                            selected = settings.themeMode == AppThemeMode.NvidiaDark,
+                            onClick = { onSelectTheme(AppThemeMode.NvidiaDark) },
+                        )
+                        ThemeOptionCard(
+                            metrics = metrics,
+                            title = "MongoDB dark",
+                            subtitle = "Темная база с глубоким графитово-зеленым оттенком и ярким зеленым акцентом",
+                            swatches = listOf(
+                                Color(0xFF001E2B),
+                                Color(0xFF1C2D38),
+                                Color(0xFF00ED64),
+                            ),
+                            selected = settings.themeMode == AppThemeMode.MongoDark,
+                            onClick = { onSelectTheme(AppThemeMode.MongoDark) },
+                        )
+                        ThemeOptionCard(
+                            metrics = metrics,
+                            title = "Stripe",
+                            subtitle = "Чистая светлая тема с фиолетово-синим акцентом",
+                            swatches = listOf(
+                                Color(0xFFF7F9FC),
+                                Color(0xFFFFFFFF),
+                                Color(0xFF635BFF),
+                            ),
+                            selected = settings.themeMode == AppThemeMode.StripeStyle,
+                            onClick = { onSelectTheme(AppThemeMode.StripeStyle) },
+                        )
+                        ThemeOptionCard(
+                            metrics = metrics,
+                            title = "Hybrid clean",
+                            subtitle = "Смешанный чистый стиль с холодными акцентами",
+                            swatches = listOf(
+                                Color(0xFFF4F7FB),
+                                Color(0xFFFFFFFF),
+                                Color(0xFF3A78F2),
+                            ),
+                            selected = settings.themeMode == AppThemeMode.HybridClean,
+                            onClick = { onSelectTheme(AppThemeMode.HybridClean) },
+                        )
+                    }
+                }
+            }
+
+            item {
+                ElevatedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(metrics.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
+                    ) {
+                        Text(
+                            text = "Размер номера",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            text = "${settings.numberFontSizeSp.toInt()} sp",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Slider(
+                            value = settings.numberFontSizeSp,
+                            onValueChange = onNumberSizeChange,
+                            valueRange = 18f..27f,
+                            steps = 8,
+                        )
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            ),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(metrics.cardPadding - 2.dp),
+                                verticalArrangement = Arrangement.spacedBy(metrics.smallSpacing),
+                            ) {
+                                Text(
+                                    text = "Превью номера",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    text = "30870364",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontSize = settings.numberFontSizeSp.sp,
+                                    ),
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        item {
-            ElevatedCard {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
+        activeJournalCollection?.let { collection ->
+            item {
+                ElevatedCard(
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(
-                        text = "Размер номера",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        text = "${settings.numberFontSizeSp.toInt()} sp",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Slider(
-                        value = settings.numberFontSizeSp,
-                        onValueChange = onNumberSizeChange,
-                        valueRange = 18f..27f,
-                        steps = 8,
-                    )
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        ),
+                    Column(
+                        modifier = Modifier.padding(metrics.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
                     ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        Text(
+                            text = "Порядок новых фото",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            text = "Эта настройка влияет только на текущую подборку.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(metrics.smallSpacing),
                         ) {
-                            Text(
-                                text = "Превью номера",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            SelectChipButton(
+                                modifier = Modifier.weight(1f),
+                                metrics = metrics,
+                                text = "Первыми",
+                                selected = collection.newEntryPosition == NewEntryPosition.First,
+                                onClick = { onNewEntryPositionChange(NewEntryPosition.First) },
                             )
-                            Text(
-                                text = "30870364",
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontSize = settings.numberFontSizeSp.sp,
-                                ),
+                            SelectChipButton(
+                                modifier = Modifier.weight(1f),
+                                metrics = metrics,
+                                text = "Последними",
+                                selected = collection.newEntryPosition == NewEntryPosition.Last,
+                                onClick = { onNewEntryPositionChange(NewEntryPosition.Last) },
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                ElevatedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(metrics.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
+                    ) {
+                        Text(
+                            text = "Копирование направления",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            text = "Добавлять название направления в начало и конец списка только в этой подборке.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(metrics.smallSpacing),
+                        ) {
+                            SelectChipButton(
+                                modifier = Modifier.weight(1f),
+                                metrics = metrics,
+                                text = "Да",
+                                selected = collection.includeDirectionInCopy,
+                                onClick = { onIncludeDirectionInCopyChange(true) },
+                            )
+                            SelectChipButton(
+                                modifier = Modifier.weight(1f),
+                                metrics = metrics,
+                                text = "Нет",
+                                selected = !collection.includeDirectionInCopy,
+                                onClick = { onIncludeDirectionInCopyChange(false) },
                             )
                         }
                     }
@@ -288,112 +523,46 @@ fun SettingsScreen(
             }
         }
 
-        item {
-            ElevatedCard {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+        if (isHomeMode) {
+            item {
+                ElevatedCard(
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(
-                        text = "Порядок новых фото",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        text = "Выберите, где должен появляться каждый новый вагон.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    Column(
+                        modifier = Modifier.padding(metrics.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
                     ) {
-                        SelectChipButton(
-                            modifier = Modifier.weight(1f),
-                            text = "Первыми",
-                            selected = settings.newEntryPosition == NewEntryPosition.First,
-                            onClick = { onNewEntryPositionChange(NewEntryPosition.First) },
+                        Text(
+                            text = "О приложении",
+                            style = MaterialTheme.typography.titleMedium,
                         )
-                        SelectChipButton(
-                            modifier = Modifier.weight(1f),
-                            text = "Последними",
-                            selected = settings.newEntryPosition == NewEntryPosition.Last,
-                            onClick = { onNewEntryPositionChange(NewEntryPosition.Last) },
+                        Text(
+                            text = versionLabel,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                    }
-                }
-            }
-        }
-
-        item {
-            ElevatedCard {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(
-                        text = "Копирование направления",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        text = "Добавлять название направления в начало и конец списка.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        SelectChipButton(
-                            modifier = Modifier.weight(1f),
-                            text = "Да",
-                            selected = settings.includeDirectionInCopy,
-                            onClick = { onIncludeDirectionInCopyChange(true) },
+                        Text(
+                            text = "Разработчик: AlexDukshanin",
+                            style = MaterialTheme.typography.bodyMedium,
                         )
-                        SelectChipButton(
-                            modifier = Modifier.weight(1f),
-                            text = "Нет",
-                            selected = !settings.includeDirectionInCopy,
-                            onClick = { onIncludeDirectionInCopyChange(false) },
-                        )
-                    }
-                }
-            }
-        }
-
-        item {
-            ElevatedCard {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text(
-                        text = "О приложении",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        text = versionLabel,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = "Разработчик: AlexDukshanin",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    TextButton(
-                        onClick = { uriHandler.openUri("https://t.me/AlexDukshanin") },
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary,
-                        ),
-                        contentPadding = PaddingValues(0.dp),
-                    ) {
-                        Text("Telegram: @AlexDukshanin")
-                    }
-                    TextButton(
-                        onClick = { uriHandler.openUri("https://github.com/AlexDukshanin/hopper") },
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary,
-                        ),
-                        contentPadding = PaddingValues(0.dp),
-                    ) {
-                        Text("GitHub: AlexDukshanin/hopper")
+                        TextButton(
+                            onClick = { uriHandler.openUri("https://t.me/AlexDukshanin") },
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.primary,
+                            ),
+                            contentPadding = PaddingValues(0.dp),
+                        ) {
+                            Text("Telegram: @AlexDukshanin")
+                        }
+                        TextButton(
+                            onClick = { uriHandler.openUri("https://github.com/AlexDukshanin/hopper") },
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.primary,
+                            ),
+                            contentPadding = PaddingValues(0.dp),
+                        ) {
+                            Text("GitHub: AlexDukshanin/hopper")
+                        }
                     }
                 }
             }
@@ -410,6 +579,7 @@ private fun android.content.Context.resolveAppVersionLabel(): String {
 
 @Composable
 private fun PhotoQualitySliderCard(
+    metrics: HopperUiMetrics,
     title: String,
     helperText: String,
     currentQuality: Int,
@@ -423,8 +593,11 @@ private fun PhotoQualitySliderCard(
         ),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(
+                horizontal = metrics.cardPadding - 2.dp,
+                vertical = metrics.cardPadding - 4.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
         ) {
             Text(
                 text = title,
@@ -501,8 +674,7 @@ private fun estimatePhotoRange(jpegQuality: Int): String {
 @Composable
 private fun IconOptionCard(
     modifier: Modifier = Modifier,
-    title: String,
-    previewColor: Color,
+    iconRes: Int,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
@@ -522,21 +694,27 @@ private fun IconOptionCard(
             containerColor = MaterialTheme.colorScheme.surface,
         ),
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+                .aspectRatio(1f)
+                .padding(10.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            Box(
+            AndroidView(
                 modifier = Modifier
-                    .size(38.dp)
-                    .background(previewColor, CircleShape),
-            )
-            Text(
-                text = title,
-                style = MaterialTheme.typography.labelLarge,
+                    .size(if (selected) 92.dp else 88.dp)
+                    .clip(RoundedCornerShape(24.dp)),
+                factory = { context ->
+                    ImageView(context).apply {
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                        adjustViewBounds = true
+                        setImageResource(iconRes)
+                    }
+                },
+                update = { imageView ->
+                    imageView.setImageResource(iconRes)
+                },
             )
         }
     }
@@ -545,6 +723,7 @@ private fun IconOptionCard(
 @Composable
 private fun SelectChipButton(
     modifier: Modifier = Modifier,
+    metrics: HopperUiMetrics,
     text: String,
     selected: Boolean,
     onClick: () -> Unit,
@@ -561,7 +740,11 @@ private fun SelectChipButton(
             softWrap = false,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.labelMedium,
+            style = if (metrics.isCompact) {
+                MaterialTheme.typography.labelSmall
+            } else {
+                MaterialTheme.typography.labelMedium
+            },
             color = if (selected) {
                 MaterialTheme.colorScheme.primary
             } else {
@@ -573,6 +756,7 @@ private fun SelectChipButton(
 
 @Composable
 private fun ThemeOptionCard(
+    metrics: HopperUiMetrics,
     title: String,
     subtitle: String,
     swatches: List<Color>,
@@ -597,7 +781,7 @@ private fun ThemeOptionCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(metrics.cardPadding - 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -607,12 +791,18 @@ private fun ThemeOptionCard(
             ) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = metrics.sectionTitleSize,
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = if (metrics.isCompact) 3 else 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Spacer(modifier = Modifier.width(12.dp))

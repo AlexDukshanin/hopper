@@ -51,6 +51,94 @@ private val SupabaseDarkColors = darkColorScheme(
     outline = SupabaseOutline,
 )
 
+private val RaycastDarkColors = darkColorScheme(
+    primary = RaycastBlue,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFF15202B),
+    onPrimaryContainer = Color(0xFFD9EEFF),
+    secondary = Color(0xFFF9F9F9),
+    onSecondary = Color(0xFF101111),
+    secondaryContainer = RaycastSurfaceRaised,
+    onSecondaryContainer = RaycastTextPrimary,
+    tertiary = RaycastRed,
+    onTertiary = Color.White,
+    error = AppDanger,
+    onError = Color.White,
+    background = RaycastBackground,
+    onBackground = RaycastTextPrimary,
+    surface = RaycastSurface,
+    onSurface = RaycastTextPrimary,
+    surfaceContainerHigh = RaycastSurfaceRaised,
+    onSurfaceVariant = RaycastTextSecondary,
+    outline = RaycastOutline,
+)
+
+private val ComposioDarkColors = darkColorScheme(
+    primary = ComposioBlue,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFF0B2A3F),
+    onPrimaryContainer = Color(0xFFD7F1FF),
+    secondary = ComposioCyan,
+    onSecondary = Color(0xFF062A2A),
+    secondaryContainer = ComposioSurfaceRaised,
+    onSecondaryContainer = ComposioTextPrimary,
+    tertiary = ComposioCyan,
+    onTertiary = Color(0xFF062A2A),
+    error = AppDanger,
+    onError = Color.White,
+    background = ComposioBackground,
+    onBackground = ComposioTextPrimary,
+    surface = ComposioSurface,
+    onSurface = ComposioTextPrimary,
+    surfaceContainerHigh = ComposioSurfaceRaised,
+    onSurfaceVariant = ComposioTextSecondary,
+    outline = ComposioOutline,
+)
+
+private val NvidiaDarkColors = darkColorScheme(
+    primary = NvidiaGreen,
+    onPrimary = Color(0xFF101802),
+    primaryContainer = Color(0xFF223306),
+    onPrimaryContainer = Color(0xFFE1F8A5),
+    secondary = NvidiaBlue,
+    onSecondary = Color.White,
+    secondaryContainer = NvidiaSurfaceRaised,
+    onSecondaryContainer = NvidiaTextPrimary,
+    tertiary = NvidiaGreen,
+    onTertiary = Color(0xFF101802),
+    error = AppDanger,
+    onError = Color.White,
+    background = NvidiaBackground,
+    onBackground = NvidiaTextPrimary,
+    surface = NvidiaSurface,
+    onSurface = NvidiaTextPrimary,
+    surfaceContainerHigh = NvidiaSurfaceRaised,
+    onSurfaceVariant = NvidiaTextSecondary,
+    outline = NvidiaOutline,
+)
+
+private val MongoDarkColors = darkColorScheme(
+    primary = MongoGreen,
+    onPrimary = Color(0xFF032010),
+    primaryContainer = Color(0xFF083625),
+    onPrimaryContainer = Color(0xFFB9FFD6),
+    secondary = MongoBlue,
+    onSecondary = Color.White,
+    secondaryContainer = MongoSurfaceRaised,
+    onSecondaryContainer = MongoTextPrimary,
+    tertiary = MongoGreen,
+    onTertiary = Color(0xFF032010),
+    error = AppDanger,
+    onError = Color.White,
+    background = MongoBackground,
+    onBackground = MongoTextPrimary,
+    surface = MongoSurface,
+    onSurface = MongoTextPrimary,
+    surfaceContainerHigh = MongoSurfaceRaised,
+    onSurfaceVariant = MongoTextSecondary,
+    outline = MongoOutline,
+)
+
 private val StripeColors = lightColorScheme(
     primary = StripeIndigo,
     onPrimary = Color.White,
@@ -71,28 +159,6 @@ private val StripeColors = lightColorScheme(
     surfaceContainerHigh = StripeSurfaceRaised,
     onSurfaceVariant = StripeTextSecondary,
     outline = StripeOutline,
-)
-
-private val AirbnbColors = lightColorScheme(
-    primary = AirbnbCoral,
-    onPrimary = Color.White,
-    primaryContainer = AirbnbRose,
-    onPrimaryContainer = AirbnbTextPrimary,
-    secondary = Color(0xFF484848),
-    onSecondary = Color.White,
-    secondaryContainer = AirbnbSurfaceRaised,
-    onSecondaryContainer = AirbnbTextPrimary,
-    tertiary = Color(0xFFFF385C),
-    onTertiary = Color.White,
-    error = AppDanger,
-    onError = Color.White,
-    background = AirbnbBackground,
-    onBackground = AirbnbTextPrimary,
-    surface = AirbnbSurface,
-    onSurface = AirbnbTextPrimary,
-    surfaceContainerHigh = AirbnbSurfaceRaised,
-    onSurfaceVariant = AirbnbTextSecondary,
-    outline = AirbnbOutline,
 )
 
 private val HybridCleanColors = lightColorScheme(
@@ -119,14 +185,17 @@ private val HybridCleanColors = lightColorScheme(
 
 @Composable
 fun XdwTheme(
-    themeMode: AppThemeMode = AppThemeMode.HybridClean,
+    themeMode: AppThemeMode = AppThemeMode.RaycastDark,
     content: @Composable () -> Unit,
 ) {
     MaterialTheme(
         colorScheme = when (themeMode) {
             AppThemeMode.SupabaseDark -> SupabaseDarkColors
+            AppThemeMode.RaycastDark -> RaycastDarkColors
+            AppThemeMode.ComposioDark -> ComposioDarkColors
+            AppThemeMode.NvidiaDark -> NvidiaDarkColors
+            AppThemeMode.MongoDark -> MongoDarkColors
             AppThemeMode.StripeStyle -> StripeColors
-            AppThemeMode.AirbnbStyle -> AirbnbColors
             AppThemeMode.HybridClean -> HybridCleanColors
         },
         content = content,

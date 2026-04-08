@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import com.alex.hopper.ocr.OcrEngine
 import com.alex.hopper.ocr.OcrResult
 import com.alex.hopper.ocr.WagonNumberExtractor
+import com.alex.hopper.settings.AppSettings
+import com.alex.hopper.settings.NewEntryPosition
 import com.alex.hopper.storage.PhotoStorage
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -68,6 +70,11 @@ class RailRepository(
     suspend fun importTransferredCollection(
         name: String,
         description: String,
+        primaryDirectionLabel: String,
+        secondaryDirectionLabel: String,
+        isPrimaryDirectionOnTop: Boolean,
+        newEntryPosition: NewEntryPosition,
+        includeDirectionInCopy: Boolean,
         entries: List<ImportedCollectionEntry>,
     ): Long = withContext(Dispatchers.IO) {
         val collectionId = collectionDao.insert(
@@ -75,6 +82,15 @@ class RailRepository(
                 name = name.trim().ifBlank { "Подборка" },
                 description = description.trim(),
                 createdAt = System.currentTimeMillis(),
+                primaryDirectionLabel = primaryDirectionLabel.ifBlank {
+                    WagonCollection.DEFAULT_PRIMARY_DIRECTION_LABEL
+                },
+                secondaryDirectionLabel = secondaryDirectionLabel.ifBlank {
+                    WagonCollection.DEFAULT_SECONDARY_DIRECTION_LABEL
+                },
+                isPrimaryDirectionOnTop = isPrimaryDirectionOnTop,
+                newEntryPosition = newEntryPosition,
+                includeDirectionInCopy = includeDirectionInCopy,
             ),
         )
 
@@ -118,6 +134,47 @@ class RailRepository(
         collectionDao.updateDescription(id, description.trim())
     }
 
+    suspend fun toggleCollectionDirection(id: Long) = withContext(Dispatchers.IO) {
+        updateCollection(id) { collection ->
+            collection.copy(isPrimaryDirectionOnTop = !collection.isPrimaryDirectionOnTop)
+        }
+    }
+
+    suspend fun updateCollectionDirectionLabels(
+        id: Long,
+        primaryLabel: String,
+        secondaryLabel: String,
+    ) = withContext(Dispatchers.IO) {
+        updateCollection(id) { collection ->
+            collection.copy(
+                primaryDirectionLabel = primaryLabel.ifBlank {
+                    WagonCollection.DEFAULT_PRIMARY_DIRECTION_LABEL
+                },
+                secondaryDirectionLabel = secondaryLabel.ifBlank {
+                    WagonCollection.DEFAULT_SECONDARY_DIRECTION_LABEL
+                },
+            )
+        }
+    }
+
+    suspend fun updateCollectionNewEntryPosition(
+        id: Long,
+        position: NewEntryPosition,
+    ) = withContext(Dispatchers.IO) {
+        updateCollection(id) { collection ->
+            collection.copy(newEntryPosition = position)
+        }
+    }
+
+    suspend fun updateCollectionIncludeDirectionInCopy(
+        id: Long,
+        include: Boolean,
+    ) = withContext(Dispatchers.IO) {
+        updateCollection(id) { collection ->
+            collection.copy(includeDirectionInCopy = include)
+        }
+    }
+
     suspend fun importLegacyJournalDescription(description: String) = withContext(Dispatchers.IO) {
         if (description.isBlank()) return@withContext
 
@@ -127,6 +184,27 @@ class RailRepository(
         val onlyCollection = collections.first()
         if (onlyCollection.description.isBlank()) {
             collectionDao.updateDescription(onlyCollection.id, description.trim())
+        }
+    }
+
+    suspend fun importLegacyCollectionSettings(settings: AppSettings) = withContext(Dispatchers.IO) {
+        val collections = collectionDao.getCollections()
+        if (collections.isEmpty()) return@withContext
+
+        collections.forEach { collection ->
+            collectionDao.insert(
+                collection.copy(
+                    primaryDirectionLabel = settings.primaryDirectionLabel.ifBlank {
+                        WagonCollection.DEFAULT_PRIMARY_DIRECTION_LABEL
+                    },
+                    secondaryDirectionLabel = settings.secondaryDirectionLabel.ifBlank {
+                        WagonCollection.DEFAULT_SECONDARY_DIRECTION_LABEL
+                    },
+                    isPrimaryDirectionOnTop = settings.isPrimaryDirectionOnTop,
+                    newEntryPosition = settings.newEntryPosition,
+                    includeDirectionInCopy = settings.includeDirectionInCopy,
+                ),
+            )
         }
     }
 
@@ -145,6 +223,8 @@ class RailRepository(
         scanBitmap: Bitmap?,
         collectionId: Long,
     ): Long = withContext(Dispatchers.IO) {
+        val collection = collectionDao.getCollectionById(collectionId)
+            ?: error("Подборка для сохранения снимка не найдена")
         val scanRecognition = runCatching {
             if (scanBitmap != null) {
                 ocrEngine.recognize(scanBitmap)
@@ -160,16 +240,37 @@ class RailRepository(
             scanRecognition
         }
         val extracted = extractor.extract(recognition)
+        val positionIndex = resolveNextPositionIndex(collection)
 
         wagonEntryDao.insert(
             WagonEntry(
                 collectionId = collectionId,
-                positionIndex = (wagonEntryDao.getMaxPositionIndex(collectionId) ?: -1L) + 1L,
+                positionIndex = positionIndex,
                 createdAt = System.currentTimeMillis(),
                 imagePath = photoFile.absolutePath,
                 primaryNumber = extracted.primaryNumber,
                 candidateNumbers = extracted.allNumbers,
                 recognizedText = recognition.fullText,
+                note = "",
+                isLoaded = false,
+            ),
+        )
+    }
+
+    suspend fun createEmptyEntry(collectionId: Long): Long = withContext(Dispatchers.IO) {
+        val collection = collectionDao.getCollectionById(collectionId)
+            ?: error("Подборка для добавления пустой карточки не найдена")
+        val positionIndex = resolveNextPositionIndex(collection)
+
+        wagonEntryDao.insert(
+            WagonEntry(
+                collectionId = collectionId,
+                positionIndex = positionIndex,
+                createdAt = System.currentTimeMillis(),
+                imagePath = "",
+                primaryNumber = null,
+                candidateNumbers = emptyList(),
+                recognizedText = "",
                 note = "",
                 isLoaded = false,
             ),
@@ -230,5 +331,33 @@ class RailRepository(
             File(entry.imagePath).takeIf(File::exists)?.delete()
         }
         wagonEntryDao.deleteById(entry.id)
+    }
+
+    suspend fun deleteEntries(entries: List<WagonEntry>) = withContext(Dispatchers.IO) {
+        entries.forEach { entry ->
+            if (entry.imagePath.isNotBlank()) {
+                File(entry.imagePath).takeIf(File::exists)?.delete()
+            }
+        }
+        entries.forEach { entry ->
+            wagonEntryDao.deleteById(entry.id)
+        }
+    }
+
+    private suspend fun updateCollection(
+        id: Long,
+        transform: (WagonCollection) -> WagonCollection,
+    ) {
+        val current = collectionDao.getCollectionById(id) ?: return
+        collectionDao.insert(transform(current))
+    }
+
+    private suspend fun resolveNextPositionIndex(collection: WagonCollection): Long {
+        return if (collection.newEntryPosition == NewEntryPosition.First) {
+            wagonEntryDao.shiftPositionIndexes(collection.id, 0)
+            0L
+        } else {
+            (wagonEntryDao.getMaxPositionIndex(collection.id) ?: -1L) + 1L
+        }
     }
 }

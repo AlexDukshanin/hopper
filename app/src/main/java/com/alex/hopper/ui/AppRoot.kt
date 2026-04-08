@@ -2,9 +2,11 @@ package com.alex.hopper.ui
 
 import android.content.ClipData
 import android.content.Intent
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -13,8 +15,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -25,6 +30,8 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -51,7 +59,11 @@ import com.alex.hopper.ui.screens.CollectionsScreen
 import com.alex.hopper.ui.screens.EntryDetailScreen
 import com.alex.hopper.ui.screens.JournalScreen
 import com.alex.hopper.ui.screens.PhotoScreen
+import com.alex.hopper.ui.screens.QrImportScreen
+import com.alex.hopper.ui.screens.QrShareScreen
+import com.alex.hopper.ui.screens.ScanFrameEditorScreen
 import com.alex.hopper.ui.screens.SearchScreen
+import com.alex.hopper.ui.screens.SettingsMode
 import com.alex.hopper.ui.screens.SettingsScreen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -61,6 +73,8 @@ private enum class SettingsSource {
     Journal,
 }
 
+private const val CameraLogTag = "HopperCamera"
+
 @Composable
 fun XdwApp(
     viewModel: MainViewModel,
@@ -69,7 +83,7 @@ fun XdwApp(
     val context = LocalContext.current
     val navController = rememberNavController()
     val importLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument(),
+        contract = OpenHopperDocumentContract(),
     ) { uri ->
         if (uri != null) {
             viewModel.importCollectionFromUri(uri)
@@ -78,7 +92,9 @@ fun XdwApp(
     val snackbarHostState = remember { SnackbarHostState() }
     val collections by viewModel.collections.collectAsStateWithLifecycle()
     val selectedCollectionId by viewModel.selectedCollectionId.collectAsStateWithLifecycle()
+    val selectedCollection by viewModel.currentCollection.collectAsStateWithLifecycle()
     val allEntries by viewModel.allEntries.collectAsStateWithLifecycle()
+    val qrShareSession by viewModel.qrShareSession.collectAsStateWithLifecycle()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val currentRouteCollectionId = when (currentRoute) {
@@ -131,6 +147,12 @@ fun XdwApp(
                         launchSingleTop = true
                     }
                     snackbarHostState.showSnackbar(event.message)
+                }
+
+                AppEvent.OpenQrShare -> {
+                    navController.navigate(AppRoute.ShareQr.route) {
+                        launchSingleTop = true
+                    }
                 }
 
                 is AppEvent.ShareFile -> {
@@ -188,8 +210,8 @@ fun XdwApp(
                         )
                         dismissJob.cancel()
                         when (result) {
-                            SnackbarResult.ActionPerformed -> viewModel.restorePendingDelete(event.entryId)
-                            SnackbarResult.Dismissed -> viewModel.confirmPendingDelete(event.entryId)
+                            SnackbarResult.ActionPerformed -> viewModel.restorePendingDelete(event.entryIds)
+                            SnackbarResult.Dismissed -> viewModel.confirmPendingDelete(event.entryIds)
                         }
                     }
                 }
@@ -285,6 +307,11 @@ fun XdwApp(
                             ),
                         )
                     },
+                    onImportQr = {
+                        navController.navigate(AppRoute.ImportQr.route) {
+                            launchSingleTop = true
+                        }
+                    },
                 )
             }
         },
@@ -362,15 +389,24 @@ fun XdwApp(
                     onDeleteEntry = { viewModel.requestDelete(it, popBack = false) },
                     onDeletePhoto = viewModel::deletePhoto,
                     onReplacePhoto = { navController.navigate(AppRoute.ReplacePhoto.createRoute(it)) },
-                    onToggleDirection = viewModel::toggleDirection,
-                    onUpdateDirections = viewModel::updateDirectionLabels,
+                    onToggleDirection = { viewModel.toggleDirection(collectionId) },
+                    onUpdateDirections = { primary, secondary ->
+                        viewModel.updateDirectionLabels(collectionId, primary, secondary)
+                    },
                     onSaveNote = viewModel::saveNote,
-                    onSaveJournalDescription = viewModel::updateJournalDescription,
+                    onSaveJournalDescription = { description ->
+                        viewModel.updateJournalDescription(collectionId, description)
+                    },
+                    onAddEmptyEntry = { viewModel.createEmptyEntry(collectionId) },
                     onTogglePhotoVisibility = viewModel::setShowPhotosInJournal,
                     onMoveEntry = viewModel::moveEntry,
                     onCopied = { viewModel.showSnackbar("Скопировано", durationMillis = 1_000) },
+                    onDeleteEntries = viewModel::requestDeleteEntries,
                     onShareCollectionFile = { includePhotos ->
                         viewModel.shareCollectionFile(collectionId, includePhotos)
+                    },
+                    onShareCollectionQr = {
+                        viewModel.prepareCollectionQrShare(collectionId)
                     },
                 )
             }
@@ -396,6 +432,11 @@ fun XdwApp(
                     replaceEntryId = null,
                     collectionId = collectionId,
                     jpegQuality = settings.photoQualityJpeg,
+                    scanFrameSettings = settings.scanFrameSettings,
+                    onOpenScanFrameEditor = {
+                        Log.d(CameraLogTag, "Navigate to scan frame editor from capture camera. collectionId=$collectionId")
+                        navController.navigate(AppRoute.ScanFrameEditor.route)
+                    },
                 )
             }
 
@@ -475,20 +516,71 @@ fun XdwApp(
                     replaceEntryId = entryId,
                     collectionId = null,
                     jpegQuality = settings.photoQualityJpeg,
+                    scanFrameSettings = settings.scanFrameSettings,
+                    onOpenScanFrameEditor = {
+                        Log.d(CameraLogTag, "Navigate to scan frame editor from replace photo camera. entryId=$entryId")
+                        navController.navigate(AppRoute.ScanFrameEditor.route)
+                    },
                 )
             }
 
             composable(AppRoute.Settings.route) {
                 SettingsScreen(
                     settings = settings,
+                    journalCollection = selectedCollection,
+                    mode = if (settingsSource == SettingsSource.Journal) {
+                        SettingsMode.Journal
+                    } else {
+                        SettingsMode.Home
+                    },
                     contentPadding = contentPadding,
                     onSelectTheme = viewModel::setThemeMode,
                     onSelectAppIcon = viewModel::setAppIconMode,
                     onNumberSizeChange = viewModel::setNumberFontSize,
-                    onNewEntryPositionChange = viewModel::setNewEntryPosition,
-                    onIncludeDirectionInCopyChange = viewModel::setIncludeDirectionInCopy,
+                    onNewEntryPositionChange = { position ->
+                        selectedCollection?.id?.let { collectionId ->
+                            viewModel.setNewEntryPosition(collectionId, position)
+                        }
+                    },
+                    onIncludeDirectionInCopyChange = { include ->
+                        selectedCollection?.id?.let { collectionId ->
+                            viewModel.setIncludeDirectionInCopy(collectionId, include)
+                        }
+                    },
                     onPhotoQualityChange = viewModel::setPhotoQualityJpeg,
                     onSharePhotoQualityChange = viewModel::setSharePhotoQualityJpeg,
+                    onOpenScanFrameEditor = {
+                        Log.d(CameraLogTag, "Navigate to scan frame editor from settings")
+                        navController.navigate(AppRoute.ScanFrameEditor.route)
+                    },
+                )
+            }
+
+            composable(AppRoute.ShareQr.route) {
+                QrShareScreen(
+                    session = qrShareSession,
+                    contentPadding = contentPadding,
+                    onBack = {
+                        viewModel.clearQrShareSession()
+                        navController.popBackStack()
+                    },
+                )
+            }
+
+            composable(AppRoute.ImportQr.route) {
+                QrImportScreen(
+                    viewModel = viewModel,
+                    contentPadding = contentPadding,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+
+            composable(AppRoute.ScanFrameEditor.route) {
+                ScanFrameEditorScreen(
+                    initialSettings = settings.scanFrameSettings,
+                    contentPadding = contentPadding,
+                    onBack = { navController.popBackStack() },
+                    onSave = viewModel::setScanFrameSettings,
                 )
             }
 
@@ -527,6 +619,7 @@ fun XdwApp(
                 )
             }
         }
+
     }
 }
 
@@ -542,7 +635,11 @@ private fun MainBottomBar(
     onNavigateSettings: () -> Unit,
     onNavigateSearch: () -> Unit,
     onImportCollection: () -> Unit,
+    onImportQr: () -> Unit,
 ) {
+    val metrics = rememberHopperUiMetrics()
+    var importMenuExpanded by remember { mutableStateOf(false) }
+
     Surface(
         tonalElevation = 8.dp,
         shadowElevation = 12.dp,
@@ -550,9 +647,12 @@ private fun MainBottomBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 10.dp),
+                .padding(
+                    horizontal = metrics.horizontalPadding + 2.dp,
+                    vertical = metrics.smallSpacing + 2.dp,
+                ),
             horizontalArrangement = if (!showJournalActions && !showImportAction) {
-                Arrangement.spacedBy(16.dp, Alignment.End)
+                Arrangement.spacedBy(metrics.sectionSpacing + 4.dp, Alignment.End)
             } else {
                 Arrangement.SpaceBetween
             },
@@ -574,7 +674,7 @@ private fun MainBottomBar(
                 FilledTonalIconButton(
                     onClick = onNavigateCamera,
                     enabled = canOpenCamera,
-                    modifier = Modifier.size(58.dp),
+                    modifier = Modifier.size(metrics.navButtonSize),
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.PhotoCamera,
@@ -601,14 +701,53 @@ private fun MainBottomBar(
             }
 
             if (showImportAction) {
-                FilledTonalIconButton(
-                    onClick = onImportCollection,
-                    modifier = Modifier.size(58.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Add,
-                        contentDescription = "Открыть Hopper файл",
-                    )
+                Box {
+                    FilledTonalIconButton(
+                        onClick = { importMenuExpanded = true },
+                        modifier = Modifier.size(metrics.navButtonSize),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = "Открыть подборку",
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = importMenuExpanded,
+                        onDismissRequest = { importMenuExpanded = false },
+                        offset = DpOffset(x = 0.dp, y = (-8).dp),
+                    ) {
+                        DropdownMenuItem(
+                            text = {
+                                Text("Файл Hopper")
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.Add,
+                                    contentDescription = null,
+                                )
+                            },
+                            onClick = {
+                                importMenuExpanded = false
+                                onImportCollection()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text("Сканировать QR")
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.QrCodeScanner,
+                                    contentDescription = null,
+                                )
+                            },
+                            onClick = {
+                                importMenuExpanded = false
+                                onImportQr()
+                            },
+                        )
+                    }
                 }
             }
 

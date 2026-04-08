@@ -7,9 +7,11 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -40,6 +42,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -59,6 +63,8 @@ fun EntryDetailScreen(
     onOpenPhoto: (Long) -> Unit,
 ) {
     val clipboardManager = LocalClipboardManager.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val entryFlow = remember(entryId) { viewModel.observeEntry(entryId) }
     val entry by entryFlow.collectAsStateWithLifecycle(initialValue = null)
     var confirmDelete by remember { mutableStateOf(false) }
@@ -73,6 +79,7 @@ fun EntryDetailScreen(
         ) {
             CenterAlignedTopAppBar(
                 title = { Text("Карточка вагона") },
+                windowInsets = WindowInsets(0.dp),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -97,13 +104,15 @@ fun EntryDetailScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(contentPadding),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+            .padding(contentPadding)
+            .imePadding(),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
             CenterAlignedTopAppBar(
                 title = { Text("Карточка вагона") },
+                windowInsets = WindowInsets(0.dp),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -232,7 +241,11 @@ fun EntryDetailScreen(
                         label = { Text("Что важно по этому вагону") },
                     )
                     FilledTonalButton(
-                        onClick = { viewModel.saveNote(entry!!.id, noteDraft) },
+                        onClick = {
+                            focusManager.clearFocus(force = true)
+                            keyboardController?.hide()
+                            viewModel.saveNote(entry!!.id, noteDraft)
+                        },
                         enabled = noteDraft != entry!!.note,
                     ) {
                         Icon(

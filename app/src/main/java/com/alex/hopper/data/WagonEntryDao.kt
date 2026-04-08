@@ -41,6 +41,18 @@ interface WagonEntryDao {
     @Query("UPDATE wagon_entries SET positionIndex = :positionIndex WHERE id = :id")
     suspend fun updatePositionIndex(id: Long, positionIndex: Long)
 
+    @Query(
+        """
+        UPDATE wagon_entries
+        SET positionIndex = positionIndex + 1
+        WHERE collectionId = :collectionId AND positionIndex >= :fromIndex
+        """,
+    )
+    suspend fun shiftPositionIndexes(
+        collectionId: Long,
+        fromIndex: Long,
+    )
+
     @Query("SELECT MAX(positionIndex) FROM wagon_entries WHERE collectionId = :collectionId")
     suspend fun getMaxPositionIndex(collectionId: Long): Long?
 

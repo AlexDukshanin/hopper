@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,8 +46,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.alex.hopper.data.CollectionSummary
 import com.alex.hopper.settings.CollectionLayoutMode
+import com.alex.hopper.ui.HopperUiMetrics
+import com.alex.hopper.ui.rememberHopperUiMetrics
 
 @Composable
 fun CollectionsScreen(
@@ -60,6 +64,7 @@ fun CollectionsScreen(
     onDeleteCollection: (Long) -> Unit,
     onLayoutModeChange: (CollectionLayoutMode) -> Unit,
 ) {
+    val metrics = rememberHopperUiMetrics()
     var createDialogVisible by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<CollectionSummary?>(null) }
     var deleteTarget by remember { mutableStateOf<CollectionSummary?>(null) }
@@ -74,16 +79,20 @@ fun CollectionsScreen(
 
     if (layoutMode == CollectionLayoutMode.Grid) {
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 160.dp),
+            columns = GridCells.Adaptive(minSize = metrics.gridMinCardWidth),
             modifier = Modifier
                 .fillMaxSize()
                 .padding(contentPadding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(
+                horizontal = metrics.horizontalPadding,
+                vertical = metrics.verticalPadding,
+            ),
+            horizontalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
+            verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 CollectionsHeader(
+                    metrics = metrics,
                     layoutMode = layoutMode,
                     onAskCreate = { createDialogVisible = true },
                     onShowHelp = { helpDialogVisible = true },
@@ -92,11 +101,15 @@ fun CollectionsScreen(
             }
             if (collections.isEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    EmptyCollectionsState(onAskCreate = { createDialogVisible = true })
+                    EmptyCollectionsState(
+                        metrics = metrics,
+                        onAskCreate = { createDialogVisible = true },
+                    )
                 }
             } else {
                 items(collections, key = { it.id }) { collection ->
                     CollectionGridCard(
+                        metrics = metrics,
                         collection = collection,
                         selected = collection.id == selectedCollectionId,
                         onOpen = { onOpenCollection(collection.id) },
@@ -111,11 +124,15 @@ fun CollectionsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(contentPadding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(
+                horizontal = metrics.horizontalPadding,
+                vertical = metrics.verticalPadding,
+            ),
+            verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
         ) {
             item {
                 CollectionsHeader(
+                    metrics = metrics,
                     layoutMode = layoutMode,
                     onAskCreate = { createDialogVisible = true },
                     onShowHelp = { helpDialogVisible = true },
@@ -124,7 +141,10 @@ fun CollectionsScreen(
             }
             if (collections.isEmpty()) {
                 item {
-                    EmptyCollectionsState(onAskCreate = { createDialogVisible = true })
+                    EmptyCollectionsState(
+                        metrics = metrics,
+                        onAskCreate = { createDialogVisible = true },
+                    )
                 }
             } else {
                 items(
@@ -133,6 +153,7 @@ fun CollectionsScreen(
                 ) { index ->
                     val collection = collections[index]
                     CollectionListCard(
+                        metrics = metrics,
                         collection = collection,
                         selected = collection.id == selectedCollectionId,
                         onOpen = { onOpenCollection(collection.id) },
@@ -190,6 +211,7 @@ fun CollectionsScreen(
 
 @Composable
 private fun CollectionsHeader(
+    metrics: HopperUiMetrics,
     layoutMode: CollectionLayoutMode,
     onAskCreate: () -> Unit,
     onShowHelp: () -> Unit,
@@ -197,8 +219,8 @@ private fun CollectionsHeader(
 ) {
     ElevatedCard {
         Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.padding(metrics.cardPadding),
+            verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -207,24 +229,24 @@ private fun CollectionsHeader(
             ) {
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     Text(
                         text = "Подборки",
-                        style = MaterialTheme.typography.headlineMedium,
-                    )
-                    Text(
-                        text = "Создавайте отдельные журналы и переключайтесь между ними.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontSize = metrics.screenTitleSize,
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(metrics.smallSpacing),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     FilledTonalIconButton(
                         onClick = onShowHelp,
+                        modifier = Modifier.size(metrics.largeIconButtonSize),
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.HelpOutline,
@@ -233,6 +255,7 @@ private fun CollectionsHeader(
                     }
                     FilledTonalIconButton(
                         onClick = { onLayoutModeChange(CollectionLayoutMode.Grid) },
+                        modifier = Modifier.size(metrics.largeIconButtonSize),
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.GridView,
@@ -246,6 +269,7 @@ private fun CollectionsHeader(
                     }
                     FilledTonalIconButton(
                         onClick = { onLayoutModeChange(CollectionLayoutMode.List) },
+                        modifier = Modifier.size(metrics.largeIconButtonSize),
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.ViewList,
@@ -260,7 +284,9 @@ private fun CollectionsHeader(
                 }
             }
             FilledTonalButton(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(metrics.primaryActionHeight),
                 onClick = onAskCreate,
             ) {
                 Icon(
@@ -268,7 +294,11 @@ private fun CollectionsHeader(
                     contentDescription = null,
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Создать подборку")
+                Text(
+                    text = "Создать подборку",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
@@ -285,11 +315,12 @@ private fun CollectionsHelpDialog(
             Column(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text("1. Создайте подборку для пути, смены или отдельного журнала.")
-                Text("2. Внутри подборки снимайте вагоны, распознавайте номера и правьте их вручную.")
-                Text("3. Меняйте порядок карточек, ставьте ПР или ГР, добавляйте заметки и описания.")
-                Text("4. Ищите по подборкам и вагонам, копируйте списки и отправляйте их в мессенджеры.")
-                Text("5. Экспортируйте подборки в Hopper-файл с фото или без фото и открывайте их на другом устройстве.")
+                Text("1. Создавайте отдельные журналы и быстро переключайтесь между ними на главном экране.")
+                Text("2. Каждая подборка хранит свое описание, направления, порядок карточек и отдельный список вагонов.")
+                Text("3. Внутри подборки снимайте вагоны, распознавайте номера и правьте их вручную.")
+                Text("4. Меняйте порядок карточек, ставьте ПР или ГР, добавляйте заметки и описания.")
+                Text("5. Ищите по подборкам и вагонам, копируйте списки и отправляйте их в мессенджеры.")
+                Text("6. Экспортируйте подборки в Hopper-файл с фото или без фото и открывайте их на другом устройстве.")
                 Text(
                     text = "Ссылки на Telegram и GitHub лежат в настройках в блоке «О приложении».",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -307,6 +338,7 @@ private fun CollectionsHelpDialog(
 
 @Composable
 private fun CollectionListCard(
+    metrics: HopperUiMetrics,
     collection: CollectionSummary,
     selected: Boolean,
     onOpen: () -> Unit,
@@ -326,8 +358,8 @@ private fun CollectionListCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = metrics.cardPadding, vertical = metrics.cardPadding),
+            horizontalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(
@@ -336,7 +368,9 @@ private fun CollectionListCard(
             ) {
                 Text(
                     text = collection.name,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = metrics.sectionTitleSize,
+                    ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -350,7 +384,7 @@ private fun CollectionListCard(
             }
             FilledTonalIconButton(
                 onClick = onRename,
-                modifier = Modifier.size(38.dp),
+                modifier = Modifier.size(metrics.iconButtonSize),
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Edit,
@@ -359,7 +393,7 @@ private fun CollectionListCard(
             }
             FilledTonalIconButton(
                 onClick = onDelete,
-                modifier = Modifier.size(38.dp),
+                modifier = Modifier.size(metrics.iconButtonSize),
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Delete,
@@ -372,6 +406,7 @@ private fun CollectionListCard(
 
 @Composable
 private fun CollectionGridCard(
+    metrics: HopperUiMetrics,
     collection: CollectionSummary,
     selected: Boolean,
     onOpen: () -> Unit,
@@ -394,12 +429,14 @@ private fun CollectionGridCard(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(metrics.cardPadding),
+            verticalArrangement = Arrangement.spacedBy(metrics.smallSpacing),
         ) {
             Text(
                 text = collection.name,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = metrics.sectionTitleSize,
+                ),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -413,7 +450,7 @@ private fun CollectionGridCard(
             Spacer(modifier = Modifier.weight(1f))
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(metrics.smallSpacing),
             ) {
                 FilledTonalIconButton(
                     onClick = onRename,
@@ -440,27 +477,37 @@ private fun CollectionGridCard(
 
 @Composable
 private fun EmptyCollectionsState(
+    metrics: HopperUiMetrics,
     onAskCreate: () -> Unit,
 ) {
     ElevatedCard {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(24.dp),
+                .padding(metrics.cardPadding + 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(metrics.sectionSpacing),
         ) {
             Text(
                 text = "Подборок пока нет",
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontSize = (metrics.sectionTitleSize.value + 2f).sp,
+                ),
             )
             Text(
                 text = "Создайте первую подборку, затем внутри нее можно будет снимать вагоны и вести карточки.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            FilledTonalButton(onClick = onAskCreate) {
-                Text("Создать первую подборку")
+            FilledTonalButton(
+                modifier = Modifier.height(metrics.primaryActionHeight),
+                onClick = onAskCreate,
+            ) {
+                Text(
+                    text = "Создать первую подборку",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
