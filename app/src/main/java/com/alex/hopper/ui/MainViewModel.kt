@@ -1,6 +1,5 @@
 package com.alex.hopper.ui
 
-import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -248,7 +247,7 @@ class MainViewModel(
 
     fun processCapture(
         file: File,
-        scanBitmap: Bitmap?,
+        scanFrameSettings: ScanFrameSettings,
         collectionId: Long,
     ) {
         viewModelScope.launch {
@@ -257,7 +256,7 @@ class MainViewModel(
                 statusMessage = "Снимок сохранен. Распознаю номер...",
             )
 
-            runCatching { repository.saveCapturedPhoto(file, scanBitmap, collectionId) }
+            runCatching { repository.saveCapturedPhoto(file, scanFrameSettings, collectionId) }
                 .onSuccess { entryId ->
                     _cameraState.value = CameraUiState(
                         statusMessage = "Запись добавлена в журнал.",

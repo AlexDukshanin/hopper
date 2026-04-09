@@ -20,7 +20,6 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -111,7 +110,6 @@ fun XdwApp(
     val bottomBarCollectionId = currentRouteCollectionId
         ?: selectedCollectionId?.takeIf { settingsSource == SettingsSource.Journal }
     val showSearchAction = currentRoute == AppRoute.Collections.route ||
-        currentRoute == AppRoute.SearchGlobal.route ||
         currentRoute == AppRoute.SearchCollection.route ||
         showJournalActions
     val showImportAction = currentRoute == AppRoute.Collections.route
@@ -671,7 +669,7 @@ private fun MainBottomBar(
                     )
                 }
 
-                FilledTonalIconButton(
+                IconButton(
                     onClick = onNavigateCamera,
                     enabled = canOpenCamera,
                     modifier = Modifier.size(metrics.navButtonSize),
@@ -679,6 +677,11 @@ private fun MainBottomBar(
                     Icon(
                         imageVector = Icons.Rounded.PhotoCamera,
                         contentDescription = "Съемка",
+                        tint = when {
+                            !canOpenCamera -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                            currentRoute == AppRoute.Camera.route -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                     )
                 }
             }
@@ -702,13 +705,14 @@ private fun MainBottomBar(
 
             if (showImportAction) {
                 Box {
-                    FilledTonalIconButton(
+                    IconButton(
                         onClick = { importMenuExpanded = true },
                         modifier = Modifier.size(metrics.navButtonSize),
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Add,
                             contentDescription = "Открыть подборку",
+                            tint = MaterialTheme.colorScheme.primary,
                         )
                     }
 

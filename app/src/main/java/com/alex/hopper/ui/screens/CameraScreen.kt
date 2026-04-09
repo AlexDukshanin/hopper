@@ -3,7 +3,6 @@ package com.alex.hopper.ui.screens
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
 import android.util.Log
 import android.util.Size
 import android.view.View
@@ -77,7 +76,6 @@ import com.alex.hopper.ui.MainViewModel
 import com.alex.hopper.util.await
 import java.io.File
 import kotlin.coroutines.resume
-import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 
@@ -366,7 +364,6 @@ private fun CameraCaptureState(
                     return@CameraGuideOverlay
                 }
                 val outputFile = viewModel.createCaptureFile()
-                val scanBitmap = previewView?.bitmap?.let { cropPreviewBitmapForScan(it, scanFrameSettings) }
                 takePicture(
                     context = context,
                     imageCapture = capture,
@@ -375,7 +372,7 @@ private fun CameraCaptureState(
                         if (replaceEntryId != null) {
                             viewModel.replacePhoto(replaceEntryId, savedFile)
                         } else if (collectionId != null) {
-                            viewModel.processCapture(savedFile, scanBitmap, collectionId)
+                            viewModel.processCapture(savedFile, scanFrameSettings, collectionId)
                         } else {
                             if (savedFile.exists()) {
                                 savedFile.delete()
@@ -633,28 +630,6 @@ private fun takePicture(
                 onError(exception.message.toFriendlyCameraMessage())
             }
         },
-    )
-}
-
-private fun cropPreviewBitmapForScan(
-    bitmap: Bitmap,
-    scanFrameSettings: ScanFrameSettings,
-): Bitmap {
-    val cropWidth = (bitmap.width * scanFrameSettings.widthFraction).roundToInt()
-    val cropHeight = (bitmap.height * scanFrameSettings.heightFraction).roundToInt()
-    val left = (bitmap.width * scanFrameSettings.leftFraction).roundToInt()
-        .coerceIn(0, bitmap.width - cropWidth)
-    val top = (bitmap.height * scanFrameSettings.topFraction).roundToInt()
-        .coerceIn(0, bitmap.height - cropHeight)
-    val safeWidth = cropWidth.coerceAtMost(bitmap.width - left.coerceAtLeast(0))
-    val safeHeight = cropHeight.coerceAtMost(bitmap.height - top)
-
-    return Bitmap.createBitmap(
-        bitmap,
-        left.coerceAtLeast(0),
-        top,
-        safeWidth,
-        safeHeight,
     )
 }
 

@@ -1,13 +1,19 @@
 package com.alex.hopper.data
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.util.Log
+import androidx.exifinterface.media.ExifInterface
 import com.alex.hopper.ocr.OcrEngine
 import com.alex.hopper.ocr.OcrResult
 import com.alex.hopper.ocr.WagonNumberExtractor
 import com.alex.hopper.settings.AppSettings
 import com.alex.hopper.settings.NewEntryPosition
+import com.alex.hopper.settings.ScanFrameSettings
 import com.alex.hopper.storage.PhotoStorage
 import java.io.File
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -220,26 +226,39 @@ class RailRepository(
 
     suspend fun saveCapturedPhoto(
         photoFile: File,
-        scanBitmap: Bitmap?,
+        scanFrameSettings: ScanFrameSettings,
         collectionId: Long,
     ): Long = withContext(Dispatchers.IO) {
         val collection = collectionDao.getCollectionById(collectionId)
             ?: error("Подборка для сохранения снимка не найдена")
+        val scanBitmap = runCatching {
+            createScanBitmap(photoFile, scanFrameSettings)
+        }.onFailure { exception ->
+            Log.w(OcrLogTag, "Failed to prepare scan bitmap from ${photoFile.name}", exception)
+        }.getOrNull()
         val scanRecognition = runCatching {
             if (scanBitmap != null) {
                 ocrEngine.recognize(scanBitmap)
             } else {
                 ocrEngine.recognize(photoFile)
             }
-        }
-            .getOrDefault(OcrResult.EMPTY)
+        }.onFailure { exception ->
+            Log.e(OcrLogTag, "Scan-frame OCR failed for ${photoFile.name}", exception)
+        }.getOrDefault(OcrResult.EMPTY)
         val scanExtracted = extractor.extract(scanRecognition)
         val recognition = if (scanBitmap != null && scanExtracted.primaryNumber == null) {
-            runCatching { ocrEngine.recognize(photoFile) }.getOrDefault(scanRecognition)
+            runCatching { ocrEngine.recognize(photoFile) }
+                .onFailure { exception ->
+                    Log.e(OcrLogTag, "Full-photo OCR fallback failed for ${photoFile.name}", exception)
+                }
+                .getOrDefault(scanRecognition)
         } else {
             scanRecognition
         }
         val extracted = extractor.extract(recognition)
+        if (recognition.fullText.isBlank()) {
+            Log.w(OcrLogTag, "OCR returned empty text for ${photoFile.name}")
+        }
         val positionIndex = resolveNextPositionIndex(collection)
 
         wagonEntryDao.insert(
@@ -359,5 +378,104 @@ class RailRepository(
         } else {
             (wagonEntryDao.getMaxPositionIndex(collection.id) ?: -1L) + 1L
         }
+    }
+
+    private fun createScanBitmap(
+        photoFile: File,
+        scanFrameSettings: ScanFrameSettings,
+    ): Bitmap? {
+        val bounds = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        BitmapFactory.decodeFile(photoFile.absolutePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            return null
+        }
+
+        val bitmap = BitmapFactory.decodeFile(
+            photoFile.absolutePath,
+            BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+                inSampleSize = calculateSampleSize(bounds.outWidth, bounds.outHeight, 1800)
+            },
+        ) ?: return null
+        val orientedBitmap = applyExifOrientation(bitmap, photoFile)
+
+        val cropWidth = (orientedBitmap.width * scanFrameSettings.widthFraction).roundToInt()
+            .coerceIn(1, orientedBitmap.width)
+        val cropHeight = (orientedBitmap.height * scanFrameSettings.heightFraction).roundToInt()
+            .coerceIn(1, orientedBitmap.height)
+        val left = (orientedBitmap.width * scanFrameSettings.leftFraction).roundToInt()
+            .coerceIn(0, (orientedBitmap.width - cropWidth).coerceAtLeast(0))
+        val top = (orientedBitmap.height * scanFrameSettings.topFraction).roundToInt()
+            .coerceIn(0, (orientedBitmap.height - cropHeight).coerceAtLeast(0))
+
+        return Bitmap.createBitmap(
+            orientedBitmap,
+            left,
+            top,
+            cropWidth,
+            cropHeight,
+        )
+    }
+
+    private fun applyExifOrientation(
+        bitmap: Bitmap,
+        photoFile: File,
+    ): Bitmap {
+        val orientation = runCatching {
+            ExifInterface(photoFile).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL,
+            )
+        }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.preScale(-1f, 1f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.preScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> {
+                matrix.preScale(-1f, 1f)
+                matrix.postRotate(270f)
+            }
+            ExifInterface.ORIENTATION_TRANSVERSE -> {
+                matrix.preScale(-1f, 1f)
+                matrix.postRotate(90f)
+            }
+            else -> return bitmap
+        }
+
+        return Bitmap.createBitmap(
+            bitmap,
+            0,
+            0,
+            bitmap.width,
+            bitmap.height,
+            matrix,
+            true,
+        )
+    }
+
+    private fun calculateSampleSize(
+        width: Int,
+        height: Int,
+        maxDimension: Int,
+    ): Int {
+        var sampleSize = 1
+        var currentWidth = width
+        var currentHeight = height
+        while (currentWidth > maxDimension || currentHeight > maxDimension) {
+            sampleSize *= 2
+            currentWidth /= 2
+            currentHeight /= 2
+        }
+        return sampleSize.coerceAtLeast(1)
+    }
+
+    private companion object {
+        const val OcrLogTag = "HopperOcr"
     }
 }
