@@ -27,8 +27,8 @@ enum class CollectionLayoutMode {
 }
 
 private const val DEFAULT_SCAN_FRAME_WIDTH = 1.0f
-private const val DEFAULT_SCAN_FRAME_HEIGHT = 0.255f
-private const val DEFAULT_SCAN_FRAME_TOP = 0.30f
+private const val DEFAULT_SCAN_FRAME_HEIGHT = 0.16f
+private const val DEFAULT_SCAN_FRAME_TOP = 0.39f
 private const val DEFAULT_SCAN_FRAME_LEFT = 0f
 
 data class ScanFrameSettings(

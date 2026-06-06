@@ -17,4 +17,10 @@ class Converters {
     @TypeConverter
     fun toNewEntryPosition(value: String): NewEntryPosition =
         NewEntryPosition.entries.firstOrNull { it.name == value } ?: NewEntryPosition.Last
+
+    @TypeConverter
+    fun fromWagonCondition(value: WagonCondition): String = value.name
+
+    @TypeConverter
+    fun toWagonCondition(value: String): WagonCondition = WagonCondition.fromStoredValue(value)
 }

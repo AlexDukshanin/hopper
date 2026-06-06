@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -94,6 +96,7 @@ fun XdwApp(
     val selectedCollection by viewModel.currentCollection.collectAsStateWithLifecycle()
     val allEntries by viewModel.allEntries.collectAsStateWithLifecycle()
     val qrShareSession by viewModel.qrShareSession.collectAsStateWithLifecycle()
+    val pendingImportConflict by viewModel.pendingImportConflict.collectAsStateWithLifecycle()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val currentRouteCollectionId = when (currentRoute) {
@@ -217,6 +220,35 @@ fun XdwApp(
         }
     }
 
+    pendingImportConflict?.let { conflict ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissPendingImportConflict,
+            title = {
+                Text("Подборка уже существует")
+            },
+            text = {
+                Text(
+                    "Подборка \"${conflict.collectionName}\" уже есть в Hopper. " +
+                        "Импортировать вместо нее или создать отдельную копию?\n\n" +
+                        "В файле: ${conflict.entryCount} ${if (conflict.entryCount == 1) "карточка" else "карточек"}.",
+                )
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = viewModel::importCollectionAsCopy) {
+                        Text("Копия")
+                    }
+                    TextButton(onClick = viewModel::dismissPendingImportConflict) {
+                        Text("Отмена")
+                    }
+                    TextButton(onClick = viewModel::replaceImportedCollection) {
+                        Text("Заменить")
+                    }
+                }
+            },
+        )
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
@@ -296,14 +328,7 @@ fun XdwApp(
                         }
                     },
                     onImportCollection = {
-                        importLauncher.launch(
-                            arrayOf(
-                                CollectionExchangeManager.MIME_TYPE,
-                                "application/octet-stream",
-                                "application/zip",
-                                "*/*",
-                            ),
-                        )
+                        importLauncher.launch(CollectionExchangeManager.SUPPORTED_IMPORT_MIME_TYPES)
                     },
                     onImportQr = {
                         navController.navigate(AppRoute.ImportQr.route) {
@@ -383,7 +408,7 @@ fun XdwApp(
                     onOpenEntry = { navController.navigate(AppRoute.Detail.createRoute(it)) },
                     onOpenPhoto = { navController.navigate(AppRoute.Photo.createRoute(it)) },
                     onUpdateNumber = viewModel::updatePrimaryNumber,
-                    onUpdateLoadState = viewModel::updateLoadState,
+                    onUpdateCondition = viewModel::updateCondition,
                     onDeleteEntry = { viewModel.requestDelete(it, popBack = false) },
                     onDeletePhoto = viewModel::deletePhoto,
                     onReplacePhoto = { navController.navigate(AppRoute.ReplacePhoto.createRoute(it)) },
@@ -645,6 +670,7 @@ private fun MainBottomBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()
                 .padding(
                     horizontal = metrics.horizontalPadding + 2.dp,
                     vertical = metrics.smallSpacing + 2.dp,

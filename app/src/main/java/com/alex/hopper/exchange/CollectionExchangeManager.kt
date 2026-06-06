@@ -12,6 +12,7 @@ import com.alex.hopper.data.CollectionSnapshot
 import com.alex.hopper.data.ImportedCollectionEntry
 import com.alex.hopper.data.RailRepository
 import com.alex.hopper.data.WagonCollection
+import com.alex.hopper.data.WagonCondition
 import com.alex.hopper.settings.NewEntryPosition
 import com.alex.hopper.storage.PhotoStorage
 import java.io.ByteArrayInputStream
@@ -42,6 +43,11 @@ data class ImportedCollectionResult(
     val entryCount: Int,
 )
 
+data class ImportPreview(
+    val collectionName: String,
+    val entryCount: Int,
+)
+
 data class QrShareSession(
     val collectionName: String,
     val chunks: List<String>,
@@ -53,6 +59,12 @@ data class QrTransferChunk(
     val total: Int,
     val data: String,
 )
+
+sealed interface CollectionImportMode {
+    data object KeepOriginal : CollectionImportMode
+    data object CreateCopy : CollectionImportMode
+    data class ReplaceExisting(val collectionId: Long) : CollectionImportMode
+}
 
 class CollectionExchangeManager(
     private val context: Context,
@@ -119,24 +131,25 @@ class CollectionExchangeManager(
         )
     }
 
-    suspend fun importFromUri(uri: Uri): ImportedCollectionResult = withContext(Dispatchers.IO) {
-        val importDirectory = File(context.cacheDir, IMPORT_DIRECTORY).apply { mkdirs() }
-        val tempArchive = File(importDirectory, "import_${UUID.randomUUID()}$FILE_EXTENSION")
+    suspend fun inspectImportUri(uri: Uri): ImportPreview = withImportedArchive(uri) { tempArchive ->
+        ZipFile(tempArchive).use { zipFile ->
+            val payload = zipFile.readTransferPayload()
+            ImportPreview(
+                collectionName = payload.collectionName,
+                entryCount = payload.entries.size,
+            )
+        }
+    }
+
+    suspend fun importFromUri(
+        uri: Uri,
+        mode: CollectionImportMode = CollectionImportMode.KeepOriginal,
+    ): ImportedCollectionResult = withImportedArchive(uri) { tempArchive ->
         val importedPhotoFiles = mutableListOf<File>()
-
         try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                tempArchive.outputStream().use { output -> input.copyTo(output) }
-            } ?: error("Не удалось открыть файл Hopper")
-
             ZipFile(tempArchive).use { zipFile ->
-                val manifestEntry = zipFile.getEntry(MANIFEST_NAME)
-                    ?: error("Файл Hopper поврежден: не найден manifest")
-                val manifestText = zipFile.getInputStream(manifestEntry)
-                    .bufferedReader()
-                    .use { it.readText() }
-                val payload = parseManifest(manifestText)
-                importPayload(payload) { entry ->
+                val payload = zipFile.readTransferPayload()
+                importPayload(payload, mode) { entry ->
                     entry.photoFileName?.let { photoName ->
                         val photoEntry = zipFile.getEntry("$PHOTOS_DIRECTORY/$photoName")
                             ?: error("В архиве не найдено фото $photoName")
@@ -152,8 +165,6 @@ class CollectionExchangeManager(
         } catch (exception: Exception) {
             importedPhotoFiles.forEach(File::delete)
             throw exception
-        } finally {
-            tempArchive.delete()
         }
     }
 
@@ -233,7 +244,7 @@ class CollectionExchangeManager(
                     put("candidateNumbers", JSONArray(entry.candidateNumbers))
                     put("recognizedText", entry.recognizedText)
                     put("note", entry.note)
-                    put("isLoaded", entry.isLoaded)
+                    put("wagonCondition", entry.condition.name)
                     put("photoFileName", photoNames[entry.id] ?: JSONObject.NULL)
                 },
             )
@@ -260,6 +271,7 @@ class CollectionExchangeManager(
 
     private suspend fun importPayload(
         payload: TransferPayload,
+        mode: CollectionImportMode = CollectionImportMode.KeepOriginal,
         resolvePhotoPath: suspend (TransferEntryPayload) -> String = { "" },
     ): ImportedCollectionResult {
         val importedEntries = payload.entries.mapIndexed { index, entry ->
@@ -271,12 +283,18 @@ class CollectionExchangeManager(
                 candidateNumbers = entry.candidateNumbers,
                 recognizedText = entry.recognizedText,
                 note = entry.note,
-                isLoaded = entry.isLoaded,
+                condition = entry.condition,
             )
         }
 
+        val resolvedCollectionName = when (mode) {
+            CollectionImportMode.KeepOriginal -> payload.collectionName
+            CollectionImportMode.CreateCopy -> repository.createUniqueCopyCollectionName(payload.collectionName)
+            is CollectionImportMode.ReplaceExisting -> payload.collectionName
+        }
+
         val importedCollectionId = repository.importTransferredCollection(
-            name = payload.collectionName,
+            name = resolvedCollectionName,
             description = payload.collectionDescription,
             primaryDirectionLabel = payload.primaryDirectionLabel,
             secondaryDirectionLabel = payload.secondaryDirectionLabel,
@@ -284,13 +302,39 @@ class CollectionExchangeManager(
             newEntryPosition = payload.newEntryPosition,
             includeDirectionInCopy = payload.includeDirectionInCopy,
             entries = importedEntries,
+            replaceCollectionId = (mode as? CollectionImportMode.ReplaceExisting)?.collectionId,
         )
 
         return ImportedCollectionResult(
             collectionId = importedCollectionId,
-            collectionName = payload.collectionName,
+            collectionName = resolvedCollectionName,
             entryCount = importedEntries.size,
         )
+    }
+
+    private suspend fun <T> withImportedArchive(
+        uri: Uri,
+        block: suspend (File) -> T,
+    ): T = withContext(Dispatchers.IO) {
+        val importDirectory = File(context.cacheDir, IMPORT_DIRECTORY).apply { mkdirs() }
+        val tempArchive = File(importDirectory, "import_${UUID.randomUUID()}$FILE_EXTENSION")
+        try {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                tempArchive.outputStream().use { output -> input.copyTo(output) }
+            } ?: error("Не удалось открыть файл Hopper")
+            block(tempArchive)
+        } finally {
+            tempArchive.delete()
+        }
+    }
+
+    private fun ZipFile.readTransferPayload(): TransferPayload {
+        val manifestEntry = getEntry(MANIFEST_NAME)
+            ?: error("Файл Hopper поврежден: не найден manifest")
+        val manifestText = getInputStream(manifestEntry)
+            .bufferedReader()
+            .use { it.readText() }
+        return parseManifest(manifestText)
     }
 
     private fun buildQrChunks(manifest: String): List<String> {
@@ -427,7 +471,14 @@ class CollectionExchangeManager(
                         candidateNumbers = item.optJSONArray("candidateNumbers").toStringList(),
                         recognizedText = item.optString("recognizedText"),
                         note = item.optString("note"),
-                        isLoaded = item.optBoolean("isLoaded", false),
+                        condition = item.optString("wagonCondition")
+                            .takeIf(String::isNotBlank)
+                            ?.let(WagonCondition::fromStoredValue)
+                            ?: if (item.optBoolean("isLoaded", false)) {
+                                WagonCondition.Loaded
+                            } else {
+                                WagonCondition.Empty
+                            },
                         photoFileName = if (item.isNull("photoFileName")) {
                             null
                         } else {
@@ -496,16 +547,26 @@ class CollectionExchangeManager(
         val candidateNumbers: List<String>,
         val recognizedText: String,
         val note: String,
-        val isLoaded: Boolean,
+        val condition: WagonCondition,
         val photoFileName: String?,
     )
 
     companion object {
         const val MIME_TYPE = "application/vnd.com.alex.hopper.collection"
+        const val OCTET_STREAM_MIME_TYPE = "application/octet-stream"
+        const val ZIP_MIME_TYPE = "application/zip"
+        const val ZIP_LEGACY_MIME_TYPE = "application/x-zip-compressed"
         const val FILE_EXTENSION = ".hopper"
+        val SUPPORTED_IMPORT_MIME_TYPES = arrayOf(
+            MIME_TYPE,
+            ZIP_MIME_TYPE,
+            ZIP_LEGACY_MIME_TYPE,
+            OCTET_STREAM_MIME_TYPE,
+            "*/*",
+        )
 
-        private const val FORMAT_VERSION = 2
-        private val SUPPORTED_FORMAT_VERSIONS = setOf(1, 2)
+        private const val FORMAT_VERSION = 3
+        private val SUPPORTED_FORMAT_VERSIONS = setOf(1, 2, 3)
         private const val MANIFEST_NAME = "manifest.json"
         private const val PHOTOS_DIRECTORY = "photos"
         private const val EXPORT_DIRECTORY = "shared_collections"

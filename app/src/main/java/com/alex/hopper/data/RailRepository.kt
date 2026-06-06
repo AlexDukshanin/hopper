@@ -31,7 +31,7 @@ data class ImportedCollectionEntry(
     val candidateNumbers: List<String>,
     val recognizedText: String,
     val note: String,
-    val isLoaded: Boolean,
+    val condition: WagonCondition,
 )
 
 class RailRepository(
@@ -73,6 +73,36 @@ class RailRepository(
         )
     }
 
+    suspend fun findCollectionByName(name: String): WagonCollection? = withContext(Dispatchers.IO) {
+        val normalizedName = name.trim()
+        if (normalizedName.isBlank()) return@withContext null
+        collectionDao.getCollections().firstOrNull { collection ->
+            collection.name.equals(normalizedName, ignoreCase = true)
+        }
+    }
+
+    suspend fun createUniqueCopyCollectionName(baseName: String): String = withContext(Dispatchers.IO) {
+        val normalizedBaseName = baseName.trim().ifBlank { "Подборка" }
+        val existingNames = collectionDao.getCollections()
+            .map { it.name.lowercase() }
+            .toHashSet()
+
+        val firstCandidate = "$normalizedBaseName (копия)"
+        if (firstCandidate.lowercase() !in existingNames) {
+            return@withContext firstCandidate
+        }
+
+        var index = 2
+        while (true) {
+            val candidate = "$normalizedBaseName (копия $index)"
+            if (candidate.lowercase() !in existingNames) {
+                return@withContext candidate
+            }
+            index += 1
+        }
+        normalizedBaseName
+    }
+
     suspend fun importTransferredCollection(
         name: String,
         description: String,
@@ -82,10 +112,17 @@ class RailRepository(
         newEntryPosition: NewEntryPosition,
         includeDirectionInCopy: Boolean,
         entries: List<ImportedCollectionEntry>,
+        replaceCollectionId: Long? = null,
     ): Long = withContext(Dispatchers.IO) {
+        val finalName = name.trim().ifBlank { "Подборка" }
+        val initialName = if (replaceCollectionId != null) {
+            "__hopper_import_${System.currentTimeMillis()}__"
+        } else {
+            finalName
+        }
         val collectionId = collectionDao.insert(
             WagonCollection(
-                name = name.trim().ifBlank { "Подборка" },
+                name = initialName,
                 description = description.trim(),
                 createdAt = System.currentTimeMillis(),
                 primaryDirectionLabel = primaryDirectionLabel.ifBlank {
@@ -112,9 +149,15 @@ class RailRepository(
                         candidateNumbers = entry.candidateNumbers,
                         recognizedText = entry.recognizedText,
                         note = entry.note,
-                        isLoaded = entry.isLoaded,
+                        condition = entry.condition,
                     ),
                 )
+            }
+            if (replaceCollectionId != null && replaceCollectionId != collectionId) {
+                deleteCollection(replaceCollectionId)
+                collectionDao.updateName(collectionId, finalName)
+            } else if (initialName != finalName) {
+                collectionDao.updateName(collectionId, finalName)
             }
             collectionId
         } catch (exception: Exception) {
@@ -271,7 +314,7 @@ class RailRepository(
                 candidateNumbers = extracted.allNumbers,
                 recognizedText = recognition.fullText,
                 note = "",
-                isLoaded = false,
+                condition = WagonCondition.Empty,
             ),
         )
     }
@@ -291,7 +334,7 @@ class RailRepository(
                 candidateNumbers = emptyList(),
                 recognizedText = "",
                 note = "",
-                isLoaded = false,
+                condition = WagonCondition.Empty,
             ),
         )
     }
@@ -304,8 +347,11 @@ class RailRepository(
         wagonEntryDao.updatePrimaryNumber(id, number.filter(Char::isDigit).take(12).ifBlank { null })
     }
 
-    suspend fun updateLoadState(id: Long, isLoaded: Boolean) = withContext(Dispatchers.IO) {
-        wagonEntryDao.updateLoadState(id, isLoaded)
+    suspend fun updateCondition(
+        id: Long,
+        condition: WagonCondition,
+    ) = withContext(Dispatchers.IO) {
+        wagonEntryDao.updateCondition(id, condition)
     }
 
     suspend fun moveEntry(
