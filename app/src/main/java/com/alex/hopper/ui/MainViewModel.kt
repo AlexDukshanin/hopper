@@ -8,8 +8,10 @@ import com.alex.hopper.data.CollectionSummary
 import com.alex.hopper.data.RailRepository
 import com.alex.hopper.data.WagonCollection
 import com.alex.hopper.data.WagonEntry
+import com.alex.hopper.exchange.CollectionImportMode
 import com.alex.hopper.exchange.CollectionExchangeManager
 import com.alex.hopper.exchange.QrShareSession
+import com.alex.hopper.data.WagonCondition
 import com.alex.hopper.settings.AppIconManager
 import com.alex.hopper.settings.AppIconMode
 import com.alex.hopper.settings.AppSettings
@@ -47,6 +49,13 @@ data class QrImportUiState(
     val errorMessage: String? = null,
 )
 
+data class PendingImportConflict(
+    val uri: Uri,
+    val collectionName: String,
+    val existingCollectionId: Long,
+    val entryCount: Int,
+)
+
 sealed interface AppEvent {
     data class OpenEntry(val entryId: Long) : AppEvent
     data class OpenCollection(
@@ -82,6 +91,7 @@ class MainViewModel(
     private val _cameraState = MutableStateFlow(CameraUiState())
     private val _qrShareSession = MutableStateFlow<QrShareSession?>(null)
     private val _qrImportState = MutableStateFlow(QrImportUiState())
+    private val _pendingImportConflict = MutableStateFlow<PendingImportConflict?>(null)
     private val _events = MutableSharedFlow<AppEvent>(extraBufferCapacity = 1)
     private var activeQrTransferId: String? = null
     private var activeQrTransferTotalChunks: Int = 0
@@ -92,6 +102,7 @@ class MainViewModel(
     val cameraState: StateFlow<CameraUiState> = _cameraState.asStateFlow()
     val qrShareSession: StateFlow<QrShareSession?> = _qrShareSession.asStateFlow()
     val qrImportState: StateFlow<QrImportUiState> = _qrImportState.asStateFlow()
+    val pendingImportConflict: StateFlow<PendingImportConflict?> = _pendingImportConflict.asStateFlow()
     val events = _events.asSharedFlow()
 
     val collections: StateFlow<List<CollectionSummary>> = repository.observeCollections()
@@ -301,12 +312,12 @@ class MainViewModel(
         }
     }
 
-    fun updateLoadState(
+    fun updateCondition(
         id: Long,
-        isLoaded: Boolean,
+        condition: WagonCondition,
     ) {
         viewModelScope.launch {
-            repository.updateLoadState(id, isLoaded)
+            repository.updateCondition(id, condition)
         }
     }
 
@@ -535,7 +546,75 @@ class MainViewModel(
 
     fun importCollectionFromUri(uri: Uri) {
         viewModelScope.launch {
-            runCatching { collectionExchangeManager.importFromUri(uri) }
+            runCatching {
+                val preview = collectionExchangeManager.inspectImportUri(uri)
+                val existingCollection = repository.findCollectionByName(preview.collectionName)
+                preview to existingCollection
+            }.onSuccess { (preview, existingCollection) ->
+                if (existingCollection != null) {
+                    _pendingImportConflict.value = PendingImportConflict(
+                        uri = uri,
+                        collectionName = preview.collectionName,
+                        existingCollectionId = existingCollection.id,
+                        entryCount = preview.entryCount,
+                    )
+                } else {
+                    importCollectionFromUriInternal(
+                        uri = uri,
+                        mode = CollectionImportMode.KeepOriginal,
+                    )
+                }
+            }
+                .onFailure { exception ->
+                    _events.emit(
+                        AppEvent.Snackbar(
+                            message = exception.message ?: "Не удалось импортировать подборку",
+                            durationMillis = 1_800,
+                        ),
+                    )
+                }
+        }
+    }
+
+    fun dismissPendingImportConflict() {
+        _pendingImportConflict.value = null
+    }
+
+    fun notifyImportAccessDenied() {
+        viewModelScope.launch {
+            _events.emit(
+                AppEvent.Snackbar(
+                    message = "Нет доступа к выбранному Hopper-файлу",
+                    durationMillis = 1_800,
+                ),
+            )
+        }
+    }
+
+    fun replaceImportedCollection() {
+        val pendingConflict = _pendingImportConflict.value ?: return
+        _pendingImportConflict.value = null
+        importCollectionFromUriInternal(
+            uri = pendingConflict.uri,
+            mode = CollectionImportMode.ReplaceExisting(pendingConflict.existingCollectionId),
+        )
+    }
+
+    fun importCollectionAsCopy() {
+        val pendingConflict = _pendingImportConflict.value ?: return
+        _pendingImportConflict.value = null
+        importCollectionFromUriInternal(
+            uri = pendingConflict.uri,
+            mode = CollectionImportMode.CreateCopy,
+        )
+    }
+
+    private fun importCollectionFromUriInternal(
+        uri: Uri,
+        mode: CollectionImportMode,
+    ) {
+        viewModelScope.launch {
+            runCatching { collectionExchangeManager.importFromUri(uri, mode) }
                 .onSuccess { result ->
                     _selectedCollectionId.value = result.collectionId
                     _events.emit(
@@ -549,10 +628,10 @@ class MainViewModel(
                     _events.emit(
                         AppEvent.Snackbar(
                             message = exception.message ?: "Не удалось импортировать подборку",
-                        durationMillis = 1_800,
-                    ),
-                )
-            }
+                            durationMillis = 1_800,
+                        ),
+                    )
+                }
         }
     }
 

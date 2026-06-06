@@ -1,5 +1,5 @@
 [versions]
-agp = "9.1.0"
+agp = "9.2.1"
 activityCompose = "1.12.4"
 camera = "1.5.3"
 coil = "3.2.0"

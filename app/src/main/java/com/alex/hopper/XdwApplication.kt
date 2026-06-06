@@ -23,7 +23,7 @@ class AppContainer(context: Context) {
         context,
         AppDatabase::class.java,
         "xdw.db",
-    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
+    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build()
 
     private val photoStorage = PhotoStorage(context)
     private val ocrEngine = OcrEngine(context)
@@ -143,6 +143,26 @@ class AppContainer(context: Context) {
                     """
                     ALTER TABLE collections
                     ADD COLUMN includeDirectionInCopy INTEGER NOT NULL DEFAULT 1
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    ALTER TABLE wagon_entries
+                    ADD COLUMN condition TEXT NOT NULL DEFAULT 'Empty'
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    UPDATE wagon_entries
+                    SET condition = CASE
+                        WHEN isLoaded = 1 THEN 'Loaded'
+                        ELSE 'Empty'
+                    END
                     """.trimIndent(),
                 )
             }

@@ -35,8 +35,8 @@ interface WagonEntryDao {
     @Query("UPDATE wagon_entries SET imagePath = :imagePath WHERE id = :id")
     suspend fun updateImagePath(id: Long, imagePath: String)
 
-    @Query("UPDATE wagon_entries SET isLoaded = :isLoaded WHERE id = :id")
-    suspend fun updateLoadState(id: Long, isLoaded: Boolean)
+    @Query("UPDATE wagon_entries SET condition = :condition WHERE id = :id")
+    suspend fun updateCondition(id: Long, condition: WagonCondition)
 
     @Query("UPDATE wagon_entries SET positionIndex = :positionIndex WHERE id = :id")
     suspend fun updatePositionIndex(id: Long, positionIndex: Long)

@@ -3,8 +3,6 @@ package com.alex.hopper.ui.screens
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -18,11 +16,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ElevatedCard
@@ -53,7 +50,7 @@ import com.alex.hopper.ui.MainViewModel
 import com.alex.hopper.util.formatTimestamp
 import java.io.File
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EntryDetailScreen(
     entryId: Long,
@@ -126,7 +123,7 @@ fun EntryDetailScreen(
                         onClick = { confirmDelete = true },
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Close,
+                            imageVector = Icons.Rounded.Delete,
                             contentDescription = "Удалить карточку",
                             tint = MaterialTheme.colorScheme.error,
                         )
@@ -175,47 +172,6 @@ fun EntryDetailScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Копировать основной номер")
-                    }
-                }
-            }
-        }
-
-        item {
-            ElevatedCard {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    Text(
-                        text = "Найденные номера",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    if (entry!!.candidateNumbers.isEmpty()) {
-                        Text(
-                            text = "OCR не нашел уверенных кандидатов. Можно сохранить заметку вручную.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    } else {
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            entry!!.candidateNumbers.forEach { number ->
-                                AssistChip(
-                                    onClick = {
-                                        clipboardManager.setText(AnnotatedString(number))
-                                    },
-                                    label = { Text(number) },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Rounded.ContentCopy,
-                                            contentDescription = null,
-                                        )
-                                    },
-                                )
-                            }
-                        }
                     }
                 }
             }

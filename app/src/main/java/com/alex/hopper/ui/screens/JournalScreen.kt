@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -82,9 +83,17 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
 import com.alex.hopper.data.WagonCollection
+import com.alex.hopper.data.ClassifierStateYellow
+import com.alex.hopper.data.DefectStateRed
+import com.alex.hopper.data.EmptyStateBlue
+import com.alex.hopper.data.LoadedStateGreen
 import com.alex.hopper.data.WagonEntry
+import com.alex.hopper.data.WagonCondition
+import com.alex.hopper.data.containerColor
 import com.alex.hopper.settings.AppSettings
 import com.alex.hopper.ui.HopperUiMetrics
+import com.alex.hopper.ui.ProvideCappedFontScale
+import com.alex.hopper.ui.cappedTextStyle
 import com.alex.hopper.ui.rememberHopperUiMetrics
 import com.alex.hopper.util.formatTimestamp
 import java.io.File
@@ -100,7 +109,7 @@ fun JournalScreen(
     onOpenEntry: (Long) -> Unit,
     onOpenPhoto: (Long) -> Unit,
     onUpdateNumber: (Long, String) -> Unit,
-    onUpdateLoadState: (Long, Boolean) -> Unit,
+    onUpdateCondition: (Long, WagonCondition) -> Unit,
     onDeleteEntry: (WagonEntry) -> Unit,
     onDeletePhoto: (Long) -> Unit,
     onReplacePhoto: (Long) -> Unit,
@@ -139,8 +148,10 @@ fun JournalScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     val rowNumbers = buildPrimaryNumbers(entries, activeCollection, CopyListFormat.Row)
     val columnNumbers = buildPrimaryNumbers(entries, activeCollection, CopyListFormat.Column)
-    val emptyCount = remember(entries) { entries.count { !it.isLoaded } }
-    val loadedCount = remember(entries) { entries.count(WagonEntry::isLoaded) }
+    val emptyCount = remember(entries) { entries.count { it.condition == WagonCondition.Empty } }
+    val loadedCount = remember(entries) { entries.count { it.condition == WagonCondition.Loaded } }
+    val defectCount = remember(entries) { entries.count { it.condition == WagonCondition.Defect } }
+    val classifierCount = remember(entries) { entries.count { it.condition == WagonCondition.Classifier } }
     var editingEntry by remember { mutableStateOf<WagonEntry?>(null) }
     var editingNoteEntry by remember { mutableStateOf<WagonEntry?>(null) }
     var deleteEntryTarget by remember { mutableStateOf<WagonEntry?>(null) }
@@ -187,11 +198,12 @@ fun JournalScreen(
         deleteEntryTarget = null
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(contentPadding),
-    ) {
+    ProvideCappedFontScale(maxFontScale = 1.18f) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding),
+        ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
@@ -260,6 +272,7 @@ fun JournalScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(metrics.primaryActionHeight),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                                 shape = RoundedCornerShape(20.dp),
                                 border = BorderStroke(
                                     1.dp,
@@ -277,16 +290,21 @@ fun JournalScreen(
                                 Icon(
                                     imageVector = Icons.Rounded.ContentCopy,
                                     contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = "Копировать",
-                                    style = if (metrics.isCompact) {
-                                        MaterialTheme.typography.labelMedium
-                                    } else {
-                                        MaterialTheme.typography.labelLarge
-                                    },
+                                    style = cappedTextStyle(
+                                        if (metrics.isCompact) {
+                                            MaterialTheme.typography.labelMedium
+                                        } else {
+                                            MaterialTheme.typography.labelLarge
+                                        },
+                                        maxFontScale = 1.0f,
+                                    ),
                                     maxLines = 1,
+                                    softWrap = false,
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             }
@@ -294,6 +312,7 @@ fun JournalScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(metrics.primaryActionHeight),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                                 shape = RoundedCornerShape(20.dp),
                                 border = BorderStroke(
                                     1.dp,
@@ -311,16 +330,21 @@ fun JournalScreen(
                                 Icon(
                                     imageVector = Icons.Rounded.Share,
                                     contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = "Отправить",
-                                    style = if (metrics.isCompact) {
-                                        MaterialTheme.typography.labelMedium
-                                    } else {
-                                        MaterialTheme.typography.labelLarge
-                                    },
+                                    style = cappedTextStyle(
+                                        if (metrics.isCompact) {
+                                            MaterialTheme.typography.labelMedium
+                                        } else {
+                                            MaterialTheme.typography.labelLarge
+                                        },
+                                        maxFontScale = 1.0f,
+                                    ),
                                     maxLines = 1,
+                                    softWrap = false,
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             }
@@ -341,6 +365,7 @@ fun JournalScreen(
                         ) {
                             FilledTonalButton(
                                 modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                                 onClick = {
                                     focusManager.clearFocus(force = true)
                                     keyboardController?.hide()
@@ -348,7 +373,13 @@ fun JournalScreen(
                                 },
                                 enabled = journalDescriptionDraft != activeCollection.description,
                             ) {
-                                Text("Сохранить описание")
+                                Text(
+                                    "Сохранить описание",
+                                    style = cappedTextStyle(MaterialTheme.typography.labelLarge, maxFontScale = 1.0f),
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
                             FilledTonalIconButton(
                                 colors = IconButtonDefaults.filledTonalIconButtonColors(
@@ -415,7 +446,7 @@ fun JournalScreen(
                             onToggleSelection = { toggleSelection(entry.id) },
                             onEdit = { editingEntry = entry },
                             onMove = { movingEntry = entry },
-                            onToggleLoadState = { onUpdateLoadState(entry.id, !entry.isLoaded) },
+                            onToggleCondition = { condition -> onUpdateCondition(entry.id, condition) },
                             onEditNote = { editingNoteEntry = entry },
                             onAskDeleteEntry = { deleteEntryTarget = entry },
                             onAskPhotoActions = { photoActionTarget = entry },
@@ -435,7 +466,7 @@ fun JournalScreen(
                             onToggleSelection = { toggleSelection(entry.id) },
                             onEdit = { editingEntry = entry },
                             onMove = { movingEntry = entry },
-                            onToggleLoadState = { onUpdateLoadState(entry.id, !entry.isLoaded) },
+                            onToggleCondition = { condition -> onUpdateCondition(entry.id, condition) },
                             onAskDeleteEntry = { deleteEntryTarget = entry },
                         )
                     }
@@ -462,163 +493,163 @@ fun JournalScreen(
                         LoadStateSummary(
                             emptyCount = emptyCount,
                             loadedCount = loadedCount,
+                            defectCount = defectCount,
+                            classifierCount = classifierCount,
                         )
                     }
                 }
             }
         }
 
-        if (selectionMode && entries.isNotEmpty()) {
-            SelectionModeBar(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = metrics.verticalPadding - 4.dp),
-                selectedCount = selectedEntryIds.size,
-                allSelected = selectedEntryIds.size == entries.size,
-                onSelectAll = {
-                    selectedEntryIds = entries.map(WagonEntry::id).toSet()
+            if (selectionMode && entries.isNotEmpty()) {
+                SelectionModeBar(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = metrics.verticalPadding - 4.dp),
+                    selectedCount = selectedEntryIds.size,
+                    allSelected = selectedEntryIds.size == entries.size,
+                    onSelectAll = {
+                        selectedEntryIds = entries.map(WagonEntry::id).toSet()
+                    },
+                    onClearSelection = {
+                        selectedEntryIds = emptySet()
+                        selectionMode = false
+                    },
+                    onDeleteSelection = { multiDeleteConfirmVisible = true },
+                )
+            }
+        }
+
+        if (copyListDialogVisible) {
+            ListFormatDialog(
+                title = "Как скопировать список?",
+                subtitle = "Выберите формат: строка или столбец.",
+                onDismiss = { copyListDialogVisible = false },
+                onRow = {
+                    clipboardManager.setText(AnnotatedString(rowNumbers))
+                    onCopied()
+                    copyListDialogVisible = false
                 },
-                onClearSelection = {
+                onColumn = {
+                    clipboardManager.setText(AnnotatedString(columnNumbers))
+                    onCopied()
+                    copyListDialogVisible = false
+                },
+            )
+        }
+
+        if (sendListDialogVisible) {
+            SendJournalDialog(
+                onDismiss = { sendListDialogVisible = false },
+                onSendTextRow = {
+                    shareTextList(context, rowNumbers)
+                    sendListDialogVisible = false
+                },
+                onSendTextColumn = {
+                    shareTextList(context, columnNumbers)
+                    sendListDialogVisible = false
+                },
+                onSendFileWithoutPhotos = {
+                    onShareCollectionFile(false)
+                    sendListDialogVisible = false
+                },
+                onSendFileWithPhotos = {
+                    onShareCollectionFile(true)
+                    sendListDialogVisible = false
+                },
+                onSendQr = {
+                    onShareCollectionQr()
+                    sendListDialogVisible = false
+                },
+            )
+        }
+
+        editingEntry?.let { entry ->
+            EditNumberDialog(
+                initialValue = entry.primaryNumber.orEmpty(),
+                onDismiss = { editingEntry = null },
+                onSave = { value ->
+                    onUpdateNumber(entry.id, value)
+                    editingEntry = null
+                },
+            )
+        }
+
+        editingNoteEntry?.let { entry ->
+            NoteDialog(
+                initialValue = entry.note,
+                onDismiss = { editingNoteEntry = null },
+                onSave = { note ->
+                    onSaveNote(entry.id, note)
+                    editingNoteEntry = null
+                },
+            )
+        }
+
+        movingEntry?.let { entry ->
+            MoveEntryDialog(
+                entry = entry,
+                entries = entries,
+                onDismiss = { movingEntry = null },
+                onMove = { targetIndex ->
+                    onMoveEntry(entry.id, targetIndex)
+                    movingEntry = null
+                },
+            )
+        }
+
+        if (editingDirections) {
+            EditDirectionsDialog(
+                initialPrimary = activeCollection.primaryDirectionLabel,
+                initialSecondary = activeCollection.secondaryDirectionLabel,
+                onDismiss = { editingDirections = false },
+                onSave = { primary, secondary ->
+                    onUpdateDirections(primary, secondary)
+                    editingDirections = false
+                },
+            )
+        }
+
+        deleteEntryTarget?.let { entry ->
+            ConfirmDeleteEntryDialog(
+                onDismiss = { deleteEntryTarget = null },
+                onMultiDelete = { enterSelectionMode(entry.id) },
+                onConfirm = {
+                    onDeleteEntry(entry)
+                    deleteEntryTarget = null
+                },
+            )
+        }
+
+        if (multiDeleteConfirmVisible) {
+            ConfirmDeleteMultipleDialog(
+                count = selectedEntryIds.size,
+                onDismiss = { multiDeleteConfirmVisible = false },
+                onConfirm = {
+                    onDeleteEntries(selectedEntries)
                     selectedEntryIds = emptySet()
                     selectionMode = false
+                    multiDeleteConfirmVisible = false
                 },
-                onDeleteSelection = { multiDeleteConfirmVisible = true },
+            )
+        }
+
+        photoActionTarget?.let { entry ->
+            PhotoActionsDialog(
+                hasPhoto = entry.imagePath.isNotBlank(),
+                onDismiss = { photoActionTarget = null },
+                onDeletePhoto = {
+                    onDeletePhoto(entry.id)
+                    photoActionTarget = null
+                },
+                onReplacePhoto = {
+                    onReplacePhoto(entry.id)
+                    photoActionTarget = null
+                },
             )
         }
     }
-
-    if (copyListDialogVisible) {
-        ListFormatDialog(
-            title = "Как скопировать список?",
-            subtitle = "Выберите формат: строка или столбец.",
-            onDismiss = { copyListDialogVisible = false },
-            onRow = {
-                clipboardManager.setText(AnnotatedString(rowNumbers))
-                onCopied()
-                copyListDialogVisible = false
-            },
-            onColumn = {
-                clipboardManager.setText(AnnotatedString(columnNumbers))
-                onCopied()
-                copyListDialogVisible = false
-            },
-        )
-    }
-
-    if (sendListDialogVisible) {
-        SendJournalDialog(
-            onDismiss = { sendListDialogVisible = false },
-            onSendTextRow = {
-                shareTextList(context, rowNumbers)
-                sendListDialogVisible = false
-            },
-            onSendTextColumn = {
-                shareTextList(context, columnNumbers)
-                sendListDialogVisible = false
-            },
-            onSendFileWithoutPhotos = {
-                onShareCollectionFile(false)
-                sendListDialogVisible = false
-            },
-            onSendFileWithPhotos = {
-                onShareCollectionFile(true)
-                sendListDialogVisible = false
-            },
-            onSendQr = {
-                onShareCollectionQr()
-                sendListDialogVisible = false
-            },
-        )
-    }
-
-    editingEntry?.let { entry ->
-        EditNumberDialog(
-            initialValue = entry.primaryNumber.orEmpty(),
-            onDismiss = { editingEntry = null },
-            onSave = { value ->
-                onUpdateNumber(entry.id, value)
-                editingEntry = null
-            },
-        )
-    }
-
-    editingNoteEntry?.let { entry ->
-        NoteDialog(
-            initialValue = entry.note,
-            onDismiss = { editingNoteEntry = null },
-            onSave = { note ->
-                onSaveNote(entry.id, note)
-                editingNoteEntry = null
-            },
-        )
-    }
-
-    movingEntry?.let { entry ->
-        MoveEntryDialog(
-            entry = entry,
-            entries = entries,
-            onDismiss = { movingEntry = null },
-            onMove = { targetIndex ->
-                onMoveEntry(entry.id, targetIndex)
-                movingEntry = null
-            },
-        )
-    }
-
-    if (editingDirections) {
-        EditDirectionsDialog(
-            initialPrimary = activeCollection.primaryDirectionLabel,
-            initialSecondary = activeCollection.secondaryDirectionLabel,
-            onDismiss = { editingDirections = false },
-            onSave = { primary, secondary ->
-                onUpdateDirections(primary, secondary)
-                editingDirections = false
-            },
-        )
-    }
-
-    deleteEntryTarget?.let { entry ->
-        ConfirmDeleteEntryDialog(
-            onDismiss = { deleteEntryTarget = null },
-            onMultiDelete = { enterSelectionMode(entry.id) },
-            onConfirm = {
-                onDeleteEntry(entry)
-                deleteEntryTarget = null
-            },
-        )
-    }
-
-    if (multiDeleteConfirmVisible) {
-        ConfirmDeleteMultipleDialog(
-            count = selectedEntryIds.size,
-            onDismiss = { multiDeleteConfirmVisible = false },
-            onConfirm = {
-                onDeleteEntries(selectedEntries)
-                selectedEntryIds = emptySet()
-                selectionMode = false
-                multiDeleteConfirmVisible = false
-            },
-        )
-    }
-
-    photoActionTarget?.let { entry ->
-        PhotoActionsDialog(
-            hasPhoto = entry.imagePath.isNotBlank(),
-            onDismiss = { photoActionTarget = null },
-            onDeletePhoto = {
-                onDeletePhoto(entry.id)
-                photoActionTarget = null
-            },
-            onReplacePhoto = {
-                onReplacePhoto(entry.id)
-                photoActionTarget = null
-            },
-        )
-    }
 }
-
-private val EmptyStateBlue = Color(0xFF2563EB)
-private val LoadedStateGreen = Color(0xFF16A34A)
 
 @Composable
 private fun CompactJournalEntryRow(
@@ -632,7 +663,7 @@ private fun CompactJournalEntryRow(
     onToggleSelection: () -> Unit,
     onEdit: () -> Unit,
     onMove: () -> Unit,
-    onToggleLoadState: () -> Unit,
+    onToggleCondition: (WagonCondition) -> Unit,
     onAskDeleteEntry: () -> Unit,
 ) {
     val containerColor by animateColorAsState(
@@ -668,20 +699,28 @@ private fun CompactJournalEntryRow(
             } else {
                 Text(
                     text = order.toString(),
-                    style = MaterialTheme.typography.titleMedium,
+                    style = cappedTextStyle(MaterialTheme.typography.titleMedium, maxFontScale = 1.05f),
                 )
             }
             Text(
                 text = entry.displayNumber(),
                 modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = numberFontSizeSp.sp,
+                style = cappedTextStyle(
+                    MaterialTheme.typography.titleMedium.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = numberFontSizeSp.sp,
+                    ),
+                    maxFontScale = 1.1f,
                 ),
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (entry.note.isNotBlank()) {
+                NoteIndicatorBadge(
+                    color = entry.condition.containerColor(),
+                )
+            }
             FilledTonalIconButton(
                 onClick = { entry.primaryNumber?.let(onCopy) },
                 enabled = !selectionMode && !entry.primaryNumber.isNullOrBlank(),
@@ -713,10 +752,33 @@ private fun CompactJournalEntryRow(
                 )
             }
             LoadStateToggleButton(
-                isLoaded = entry.isLoaded,
-                onClick = if (selectionMode) ({}) else onToggleLoadState,
+                condition = entry.condition,
+                onClick = if (selectionMode) ({}) else ({ onToggleCondition(entry.condition.nextTapState()) }),
+                onLongClick = if (selectionMode) ({}) else ({ onToggleCondition(entry.condition.toggleLongPressState()) }),
                 modifier = Modifier.size(34.dp),
                 enabled = !selectionMode,
+            )
+        }
+    }
+}
+
+@Composable
+private fun NoteIndicatorBadge(
+    color: Color,
+) {
+    Surface(
+        modifier = Modifier.size(18.dp),
+        shape = CircleShape,
+        color = color,
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "!",
+                style = cappedTextStyle(MaterialTheme.typography.labelSmall, maxFontScale = 1.0f),
+                color = Color.White,
+                maxLines = 1,
             )
         }
     }
@@ -796,6 +858,7 @@ private fun AddEmptyEntryButton(
         modifier = modifier
             .fillMaxWidth()
             .height(metrics.primaryActionHeight),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
         onClick = onClick,
     ) {
         Icon(
@@ -805,7 +868,9 @@ private fun AddEmptyEntryButton(
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = "Добавить пустую карточку",
+            style = cappedTextStyle(MaterialTheme.typography.labelLarge, maxFontScale = 1.0f),
             maxLines = 1,
+            softWrap = false,
             overflow = TextOverflow.Ellipsis,
         )
     }
@@ -824,7 +889,7 @@ private fun JournalEntryCard(
     onToggleSelection: () -> Unit,
     onEdit: () -> Unit,
     onMove: () -> Unit,
-    onToggleLoadState: () -> Unit,
+    onToggleCondition: (WagonCondition) -> Unit,
     onEditNote: () -> Unit,
     onAskDeleteEntry: () -> Unit,
     onAskPhotoActions: () -> Unit,
@@ -884,7 +949,7 @@ private fun JournalEntryCard(
                                 ) {
                                     Text(
                                         text = order.toString(),
-                                        style = MaterialTheme.typography.labelLarge,
+                                        style = cappedTextStyle(MaterialTheme.typography.labelLarge, maxFontScale = 1.05f),
                                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                                     )
                                 }
@@ -895,9 +960,12 @@ private fun JournalEntryCard(
                             modifier = Modifier
                                 .weight(1f)
                                 .marqueeWhenNeeded(),
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = numberFontSizeSp.sp,
+                            style = cappedTextStyle(
+                                MaterialTheme.typography.titleMedium.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = numberFontSizeSp.sp,
+                                ),
+                                maxFontScale = 1.1f,
                             ),
                             maxLines = 1,
                             softWrap = false,
@@ -947,8 +1015,9 @@ private fun JournalEntryCard(
                             )
                         }
                         LoadStateToggleButton(
-                            isLoaded = entry.isLoaded,
-                            onClick = if (selectionMode) ({}) else onToggleLoadState,
+                            condition = entry.condition,
+                            onClick = if (selectionMode) ({}) else ({ onToggleCondition(entry.condition.nextTapState()) }),
+                            onLongClick = if (selectionMode) ({}) else ({ onToggleCondition(entry.condition.toggleLongPressState()) }),
                             modifier = Modifier.size(36.dp),
                             enabled = !selectionMode,
                         )
@@ -992,26 +1061,29 @@ private fun JournalEntryCard(
 
 @Composable
 private fun LoadStateToggleButton(
-    isLoaded: Boolean,
+    condition: WagonCondition,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
-    FilledTonalIconButton(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier,
-        colors = IconButtonDefaults.filledTonalIconButtonColors(
-            containerColor = if (isLoaded) LoadedStateGreen else EmptyStateBlue,
-            contentColor = Color.White,
+    Surface(
+        modifier = modifier.combinedClickable(
+            enabled = enabled,
+            onClick = onClick,
+            onLongClick = onLongClick,
         ),
+        shape = CircleShape,
+        color = condition.containerColor(),
     ) {
-        Text(
-            text = if (isLoaded) "ГР" else "ПР",
-            style = MaterialTheme.typography.labelMedium,
-            color = Color.White,
-            maxLines = 1,
-        )
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = condition.shortLabel,
+                style = cappedTextStyle(MaterialTheme.typography.labelMedium, maxFontScale = 1.05f),
+                color = Color.White,
+                maxLines = 1,
+            )
+        }
     }
 }
 
@@ -1049,6 +1121,8 @@ private fun SelectionStateBadge(
 private fun LoadStateSummary(
     emptyCount: Int,
     loadedCount: Int,
+    defectCount: Int,
+    classifierCount: Int,
 ) {
     Column(
         modifier = Modifier
@@ -1076,6 +1150,30 @@ private fun LoadStateSummary(
             )
             Text(
                 text = loadedCount.toString(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = "Брак:",
+                style = MaterialTheme.typography.bodyMedium,
+                color = DefectStateRed,
+            )
+            Text(
+                text = defectCount.toString(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = "Классник:",
+                style = MaterialTheme.typography.bodyMedium,
+                color = ClassifierStateYellow,
+            )
+            Text(
+                text = classifierCount.toString(),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1350,6 +1448,7 @@ private fun SelectionModeBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1365,29 +1464,41 @@ private fun SelectionModeBar(
                 ) {
                     Text(
                         text = selectedCount.coerceAtMost(99).toString(),
-                        style = MaterialTheme.typography.labelLarge,
+                        style = cappedTextStyle(MaterialTheme.typography.labelLarge, maxFontScale = 1.1f),
                         color = MaterialTheme.colorScheme.onError,
                         maxLines = 1,
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.width(4.dp))
-
             TextButton(
+                modifier = Modifier.weight(1f),
                 onClick = onSelectAll,
                 enabled = !allSelected,
             ) {
-                Text("Выбрать все")
+                Text(
+                    "Выбрать все",
+                    style = cappedTextStyle(MaterialTheme.typography.labelLarge, maxFontScale = 1.0f),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
             TextButton(
+                modifier = Modifier.weight(1f),
                 onClick = onClearSelection,
             ) {
-                Text("Отмена")
+                Text(
+                    "Отмена",
+                    style = cappedTextStyle(MaterialTheme.typography.labelLarge, maxFontScale = 1.0f),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
             FilledTonalIconButton(
                 onClick = onDeleteSelection,
-                modifier = Modifier.size(42.dp),
+                modifier = Modifier.size(46.dp),
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Delete,
@@ -1532,7 +1643,7 @@ private fun ListFormatDialog(
         },
         confirmButton = {
             TextButton(onClick = onRow) {
-                Text("Строка")
+                Text("Строка", style = cappedTextStyle(MaterialTheme.typography.labelLarge, maxFontScale = 1.1f))
             }
         },
         dismissButton = {
@@ -1541,10 +1652,10 @@ private fun ListFormatDialog(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TextButton(onClick = onColumn) {
-                    Text("Столбец")
+                    Text("Столбец", style = cappedTextStyle(MaterialTheme.typography.labelLarge, maxFontScale = 1.1f))
                 }
                 TextButton(onClick = onDismiss) {
-                    Text("Отмена")
+                    Text("Отмена", style = cappedTextStyle(MaterialTheme.typography.labelLarge, maxFontScale = 1.1f))
                 }
             }
         },
@@ -1780,33 +1891,56 @@ private fun ConfirmDeleteEntryDialog(
     onMultiDelete: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text("Удалить карточку?")
-        },
-        text = {
-            Text("Карточка будет удалена. После этого останется кнопка вернуть на 5 секунд.")
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text("Удалить")
-            }
-        },
-        dismissButton = {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.94f),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 8.dp,
+            shadowElevation = 12.dp,
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                TextButton(onClick = onMultiDelete) {
-                    Text("Удалить\nнесколько")
+                Text(
+                    "Удалить карточку?",
+                    style = cappedTextStyle(MaterialTheme.typography.headlineSmall, maxFontScale = 1.15f),
+                )
+                Text(
+                    "Карточка будет удалена. После этого останется кнопка вернуть на 5 секунд.",
+                    style = cappedTextStyle(MaterialTheme.typography.bodyLarge, maxFontScale = 1.15f),
+                )
+                FilledTonalButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onConfirm,
+                ) {
+                    Text(
+                        "Удалить",
+                        style = cappedTextStyle(MaterialTheme.typography.labelLarge, maxFontScale = 1.0f),
+                    )
                 }
-                TextButton(onClick = onDismiss) {
-                    Text("Отмена")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onMultiDelete) {
+                        Text(
+                            "Удалить\nнесколько",
+                            style = cappedTextStyle(MaterialTheme.typography.labelLarge, maxFontScale = 1.0f),
+                        )
+                    }
+                    TextButton(onClick = onDismiss) {
+                        Text("Отмена", style = cappedTextStyle(MaterialTheme.typography.labelLarge, maxFontScale = 1.0f))
+                    }
                 }
             }
-        },
-    )
+        }
+    }
 }
 
 @Composable
@@ -1815,25 +1949,46 @@ private fun ConfirmDeleteMultipleDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text("Удалить несколько карточек?")
-        },
-        text = {
-            Text("Будет удалено: $count. После этого останется кнопка вернуть на 5 секунд.")
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text("Удалить")
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.94f),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 8.dp,
+            shadowElevation = 12.dp,
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+            ) {
+                Text(
+                    "Удалить несколько карточек?",
+                    style = cappedTextStyle(MaterialTheme.typography.headlineSmall, maxFontScale = 1.15f),
+                )
+                Text(
+                    "Будет удалено: $count. После этого останется кнопка вернуть на 5 секунд.",
+                    style = cappedTextStyle(MaterialTheme.typography.bodyLarge, maxFontScale = 1.15f),
+                )
+                FilledTonalButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onConfirm,
+                ) {
+                    Text("Удалить", style = cappedTextStyle(MaterialTheme.typography.labelLarge, maxFontScale = 1.0f))
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Отмена", style = cappedTextStyle(MaterialTheme.typography.labelLarge, maxFontScale = 1.0f))
+                    }
+                }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Отмена")
-            }
-        },
-    )
+        }
+    }
 }
 
 @Composable

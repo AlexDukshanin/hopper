@@ -3,21 +3,29 @@ package com.alex.hopper.ui.screens
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.hardware.camera2.CameraCharacteristics
+import android.os.Build
 import android.util.Log
 import android.util.Size
 import android.view.View
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.core.AspectRatio
+import androidx.camera.core.Camera
+import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
+import androidx.camera.core.ZoomState
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -33,6 +41,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CameraAlt
@@ -46,6 +55,7 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -55,11 +65,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -74,7 +86,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.alex.hopper.settings.ScanFrameSettings
 import com.alex.hopper.ui.MainViewModel
 import com.alex.hopper.util.await
+import java.util.Locale
 import java.io.File
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -84,7 +99,15 @@ private object ScanGuideSpec {
 }
 
 private const val CameraLogTag = "HopperCamera"
+private const val MinCaptureZoomRatioFloor = 0.6f
+private const val StandardReferenceFocalLengthMm = 4.5f
 private val PreferredPreviewSize = Size(1280, 720)
+private const val MaxCaptureZoomRatioCap = 6f
+
+private enum class CaptureLensMode {
+    Main,
+    UltraWide,
+}
 
 @Composable
 fun CameraScreen(
@@ -268,15 +291,25 @@ private fun CameraCaptureState(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var previewView by remember { mutableStateOf<PreviewView?>(null) }
+    var boundCamera by remember { mutableStateOf<Camera?>(null) }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var bindError by remember { mutableStateOf<String?>(null) }
     var isCameraBound by remember { mutableStateOf(false) }
     var isPreviewStreaming by remember { mutableStateOf(false) }
+    var zoomSetup by remember { mutableStateOf<CameraZoomSetup?>(null) }
+    var boundLensMode by remember { mutableStateOf(CaptureLensMode.Main) }
+    var zoomRatio by remember { mutableStateOf(1f) }
+    var minZoomRatio by remember { mutableStateOf(1f) }
+    var maxZoomRatio by remember { mutableStateOf(1f) }
+    val targetLensMode = zoomSetup
+        ?.lensModeForDisplayZoom(zoomRatio)
+        ?: CaptureLensMode.Main
 
-    LaunchedEffect(previewView, lifecycleOwner, jpegQuality) {
+    LaunchedEffect(previewView, lifecycleOwner, jpegQuality, targetLensMode) {
         val currentPreview = previewView ?: return@LaunchedEffect
         imageCapture = null
+        boundCamera = null
         bindError = null
         isCameraBound = false
         Log.d(CameraLogTag, "Bind capture camera started. jpegQuality=$jpegQuality replaceEntryId=$replaceEntryId collectionId=$collectionId")
@@ -287,12 +320,27 @@ private fun CameraCaptureState(
                 lifecycleOwner = lifecycleOwner,
                 previewView = currentPreview,
                 jpegQuality = jpegQuality,
+                targetLensMode = targetLensMode,
+                existingZoomSetup = zoomSetup,
             )
-        }.onSuccess { boundCamera ->
-            cameraProvider = boundCamera.first
-            imageCapture = boundCamera.second
+        }.onSuccess { binding ->
+            cameraProvider = binding.provider
+            imageCapture = binding.imageCapture
+            boundCamera = binding.camera
+            boundLensMode = binding.lensMode
+            zoomSetup = binding.zoomSetup
             isCameraBound = true
             bindError = null
+            minZoomRatio = binding.zoomSetup.minimumDisplayZoom()
+            maxZoomRatio = binding.zoomSetup.maximumDisplayZoom()
+            val clampedDisplayZoom = binding.zoomSetup.coerceDisplayZoom(zoomRatio)
+            zoomRatio = clampedDisplayZoom
+            binding.camera.cameraControl.setZoomRatio(
+                binding.zoomSetup.actualZoomRatioFor(
+                    displayZoomRatio = clampedDisplayZoom,
+                    lensMode = binding.lensMode,
+                ),
+            )
             Log.d(CameraLogTag, "Bind capture camera success. replaceEntryId=$replaceEntryId collectionId=$collectionId")
         }.onFailure { exception ->
             if (exception is CancellationException) {
@@ -325,6 +373,7 @@ private fun CameraCaptureState(
     DisposableEffect(Unit) {
         onDispose {
             Log.d(CameraLogTag, "Dispose capture camera. replaceEntryId=$replaceEntryId collectionId=$collectionId")
+            boundCamera = null
             imageCapture = null
             isCameraBound = false
             cameraProvider?.unbindAll()
@@ -356,6 +405,25 @@ private fun CameraCaptureState(
             scanFrameSettings = scanFrameSettings,
             isProcessing = isProcessing,
             errorMessage = errorMessage ?: bindError,
+            zoomRatio = zoomRatio,
+            minZoomRatio = minZoomRatio,
+            maxZoomRatio = maxZoomRatio,
+            zoomEnabled = isCameraBound && isPreviewStreaming && bindError == null,
+            onZoomRatioChange = { requestedZoomRatio ->
+                val setup = zoomSetup ?: return@CameraGuideOverlay
+                val clampedZoomRatio = setup.coerceDisplayZoom(requestedZoomRatio)
+                zoomRatio = clampedZoomRatio
+                val camera = boundCamera ?: return@CameraGuideOverlay
+                val desiredLensMode = setup.lensModeForDisplayZoom(clampedZoomRatio)
+                if (desiredLensMode == boundLensMode) {
+                    camera.cameraControl.setZoomRatio(
+                        setup.actualZoomRatioFor(
+                            displayZoomRatio = clampedZoomRatio,
+                            lensMode = desiredLensMode,
+                        ),
+                    )
+                }
+            },
             onOpenScanFrameEditor = onOpenScanFrameEditor,
             onCapture = {
                 val capture = imageCapture?.takeIf { isCameraBound && isPreviewStreaming }
@@ -400,14 +468,39 @@ private fun CameraGuideOverlay(
     scanFrameSettings: ScanFrameSettings,
     isProcessing: Boolean,
     errorMessage: String?,
+    zoomRatio: Float,
+    minZoomRatio: Float,
+    maxZoomRatio: Float,
+    zoomEnabled: Boolean,
+    onZoomRatioChange: (Float) -> Unit,
     captureEnabled: Boolean,
     onOpenScanFrameEditor: () -> Unit,
     onCapture: () -> Unit,
 ) {
     var showHint by rememberSaveable { mutableStateOf(false) }
+    val latestZoomRatio by rememberUpdatedState(zoomRatio)
+    val latestMinZoomRatio by rememberUpdatedState(minZoomRatio)
+    val latestMaxZoomRatio by rememberUpdatedState(maxZoomRatio)
+    val latestOnZoomRatioChange by rememberUpdatedState(onZoomRatioChange)
+    val canZoom = zoomEnabled && maxZoomRatio > minZoomRatio + 0.02f
 
     BoxWithConstraints(
-        modifier = modifier.padding(vertical = 18.dp),
+        modifier = modifier
+            .padding(vertical = 18.dp)
+            .pointerInput(canZoom) {
+                if (!canZoom) return@pointerInput
+                detectTransformGestures(
+                    panZoomLock = true,
+                ) { _, _, gestureZoom, _ ->
+                    if (abs(gestureZoom - 1f) < 0.01f) return@detectTransformGestures
+                    latestOnZoomRatioChange(
+                        (latestZoomRatio * gestureZoom).coerceIn(
+                            latestMinZoomRatio,
+                            latestMaxZoomRatio,
+                        ),
+                    )
+                }
+            },
     ) {
         val frameLeft = maxWidth * scanFrameSettings.leftFraction
         val frameWidth = maxWidth * scanFrameSettings.widthFraction
@@ -459,8 +552,19 @@ private fun CameraGuideOverlay(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.End,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                Spacer(modifier = Modifier.size(42.dp))
+                TextButton(
+                    onClick = { showHint = !showHint },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = Color.White,
+                        containerColor = Color.Transparent,
+                    ),
+                ) {
+                    Text(if (showHint) "Скрыть подсказку" else "Показать подсказку")
+                }
                 FilledTonalIconButton(
                     onClick = {
                         Log.d(CameraLogTag, "Open scan frame editor from camera overlay")
@@ -474,16 +578,6 @@ private fun CameraGuideOverlay(
                         modifier = Modifier.size(20.dp),
                     )
                 }
-            }
-
-            TextButton(
-                onClick = { showHint = !showHint },
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = Color.White,
-                    containerColor = Color.Transparent,
-                ),
-            ) {
-                Text(if (showHint) "Скрыть подсказку" else "Показать подсказку")
             }
 
             if (showHint) {
@@ -546,6 +640,34 @@ private fun CameraGuideOverlay(
                 }
             }
 
+            if (canZoom) {
+                Surface(
+                    shape = RoundedCornerShape(22.dp),
+                    tonalElevation = 4.dp,
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .widthIn(min = 220.dp, max = 320.dp)
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(
+                            text = formatZoomRatio(zoomRatio),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Slider(
+                            value = zoomRatio.coerceIn(minZoomRatio, maxZoomRatio),
+                            onValueChange = onZoomRatioChange,
+                            valueRange = minZoomRatio..maxZoomRatio,
+                            enabled = zoomEnabled,
+                        )
+                    }
+                }
+            }
+
             if (isProcessing) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(36.dp),
@@ -573,9 +695,104 @@ private suspend fun bindCamera(
     lifecycleOwner: LifecycleOwner,
     previewView: PreviewView,
     jpegQuality: Int,
-): Pair<ProcessCameraProvider, ImageCapture> {
+    targetLensMode: CaptureLensMode,
+    existingZoomSetup: CameraZoomSetup?,
+): BoundCaptureSession {
     val cameraProvider = ProcessCameraProvider.getInstance(context).await()
-    val preview = Preview.Builder()
+    val sanitizedExistingZoomSetup = existingZoomSetup?.sanitizedForDevice()
+    val requestedLensProfile = when (targetLensMode) {
+        CaptureLensMode.Main -> sanitizedExistingZoomSetup?.main
+        CaptureLensMode.UltraWide -> sanitizedExistingZoomSetup?.ultraWide
+    }
+    val requestedPhysicalCameraId = when (targetLensMode) {
+        CaptureLensMode.Main -> null
+        CaptureLensMode.UltraWide -> requestedLensProfile?.physicalCameraId
+    }
+    val cameraSelector = when {
+        requestedLensProfile == null -> CameraSelector.DEFAULT_BACK_CAMERA
+        requestedLensProfile.physicalCameraId != null -> CameraSelector.DEFAULT_BACK_CAMERA
+        targetLensMode == CaptureLensMode.UltraWide &&
+            requestedLensProfile.cameraId != sanitizedExistingZoomSetup?.main?.cameraId -> {
+            selectorForCameraId(requestedLensProfile.cameraId)
+        }
+
+        else -> CameraSelector.DEFAULT_BACK_CAMERA
+    }
+    val requiresLensSpecificBinding = targetLensMode == CaptureLensMode.UltraWide &&
+        requestedLensProfile != null &&
+        (
+            requestedLensProfile.physicalCameraId != null ||
+                requestedLensProfile.cameraId != sanitizedExistingZoomSetup?.main?.cameraId
+            )
+
+    Log.d(
+        CameraLogTag,
+        "bindCamera targetLensMode=$targetLensMode requestedCameraId=${requestedLensProfile?.cameraId} " +
+            "requestedPhysicalCameraId=$requestedPhysicalCameraId hasExistingZoomSetup=${existingZoomSetup != null}",
+    )
+
+    val bindingResult = runCatching {
+        bindUseCases(
+            cameraProvider = cameraProvider,
+            lifecycleOwner = lifecycleOwner,
+            previewView = previewView,
+            jpegQuality = jpegQuality,
+            cameraSelector = cameraSelector,
+            physicalCameraId = requestedPhysicalCameraId,
+        )
+    }.recoverCatching { exception ->
+        if (!requiresLensSpecificBinding) throw exception
+        Log.w(
+            CameraLogTag,
+            "Lens-specific bind failed for cameraId=${requestedLensProfile?.cameraId} physicalCameraId=$requestedPhysicalCameraId. Falling back to logical back camera.",
+            exception,
+        )
+        bindUseCases(
+            cameraProvider = cameraProvider,
+            lifecycleOwner = lifecycleOwner,
+            previewView = previewView,
+            jpegQuality = jpegQuality,
+            cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA,
+            physicalCameraId = null,
+        )
+    }.getOrThrow()
+
+    val resolvedZoomSetup = (
+        existingZoomSetup ?: buildCameraZoomSetup(
+            cameraProvider = cameraProvider,
+            mainCameraInfo = bindingResult.camera.cameraInfo,
+        )
+        ).sanitizedForDevice()
+    val resolvedLensMode = if (bindingResult.physicalCameraId != null) {
+        CaptureLensMode.UltraWide
+    } else {
+        CaptureLensMode.Main
+    }
+
+    return BoundCaptureSession(
+        provider = cameraProvider,
+        imageCapture = bindingResult.imageCapture,
+        camera = bindingResult.camera,
+        lensMode = resolvedLensMode,
+        zoomSetup = resolvedZoomSetup,
+    )
+}
+
+private data class CameraBindingResult(
+    val camera: Camera,
+    val imageCapture: ImageCapture,
+    val physicalCameraId: String?,
+)
+
+private fun bindUseCases(
+    cameraProvider: ProcessCameraProvider,
+    lifecycleOwner: LifecycleOwner,
+    previewView: PreviewView,
+    jpegQuality: Int,
+    cameraSelector: CameraSelector,
+    physicalCameraId: String?,
+): CameraBindingResult {
+    val previewBuilder = Preview.Builder()
         .setResolutionSelector(
             ResolutionSelector.Builder()
                 .setAspectRatioStrategy(
@@ -592,22 +809,41 @@ private suspend fun bindCamera(
                 )
                 .build(),
         )
-        .build()
-        .also { it.surfaceProvider = previewView.surfaceProvider }
-    val imageCapture = ImageCapture.Builder()
+    val imageCaptureBuilder = ImageCapture.Builder()
         .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
         .setJpegQuality(jpegQuality)
+
+    physicalCameraId?.takeIf {
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+    }?.let { cameraId ->
+        Camera2Interop.Extender(previewBuilder)
+            .setPhysicalCameraId(cameraId)
+        Camera2Interop.Extender(imageCaptureBuilder)
+            .setPhysicalCameraId(cameraId)
+    }
+
+    val preview = previewBuilder
         .build()
+        .also { it.surfaceProvider = previewView.surfaceProvider }
+    val imageCapture = imageCaptureBuilder.build()
 
     cameraProvider.unbindAll()
-    cameraProvider.bindToLifecycle(
+    val camera = cameraProvider.bindToLifecycle(
         lifecycleOwner,
-        CameraSelector.DEFAULT_BACK_CAMERA,
+        cameraSelector,
         preview,
         imageCapture,
     )
-
-    return cameraProvider to imageCapture
+    Log.d(
+        CameraLogTag,
+        "bindUseCases success logicalCameraId=${Camera2CameraInfo.from(camera.cameraInfo).cameraId} " +
+            "physicalCameraId=$physicalCameraId",
+    )
+    return CameraBindingResult(
+        camera = camera,
+        imageCapture = imageCapture,
+        physicalCameraId = physicalCameraId,
+    )
 }
 
 private fun takePicture(
@@ -668,6 +904,221 @@ private suspend fun PreviewView.awaitPreviewReady() {
         continuation.invokeOnCancellation {
             removeOnAttachStateChangeListener(attachListener)
         }
+    }
+}
+
+private data class BoundCaptureSession(
+    val provider: ProcessCameraProvider,
+    val imageCapture: ImageCapture,
+    val camera: Camera,
+    val lensMode: CaptureLensMode,
+    val zoomSetup: CameraZoomSetup,
+)
+
+private data class CameraLensProfile(
+    val cameraId: String,
+    val physicalCameraId: String?,
+    val focalLengthMm: Float,
+    val minActualZoomRatio: Float,
+    val maxActualZoomRatio: Float,
+)
+
+private data class CameraZoomSetup(
+    val main: CameraLensProfile,
+    val ultraWide: CameraLensProfile?,
+) {
+    private val ultraWideBaseDisplayZoomRatio: Float?
+        get() = ultraWide?.let { profile ->
+            (profile.focalLengthMm / main.focalLengthMm)
+                .coerceAtMost(1f)
+                .coerceAtLeast(MinCaptureZoomRatioFloor)
+        }
+
+    fun lensModeForDisplayZoom(displayZoomRatio: Float): CaptureLensMode {
+        val ultraWideThreshold = ultraWideBaseDisplayZoomRatio ?: return CaptureLensMode.Main
+        return if (displayZoomRatio < 1f && ultraWideThreshold < 1f) {
+            CaptureLensMode.UltraWide
+        } else {
+            CaptureLensMode.Main
+        }
+    }
+
+    fun coerceDisplayZoom(displayZoomRatio: Float): Float {
+        return displayZoomRatio.coerceIn(minimumDisplayZoom(), maximumDisplayZoom())
+    }
+
+    fun minimumDisplayZoom(): Float {
+        val ultraWideBase = ultraWideBaseDisplayZoomRatio
+        return if (ultraWide != null && ultraWideBase != null) {
+            maxOf(
+                MinCaptureZoomRatioFloor,
+                ultraWideBase * ultraWide.minActualZoomRatio,
+            )
+        } else {
+            maxOf(
+                MinCaptureZoomRatioFloor,
+                main.minActualZoomRatio,
+            )
+        }
+    }
+
+    fun maximumDisplayZoom(): Float = main.maxActualZoomRatio
+
+    fun actualZoomRatioFor(
+        displayZoomRatio: Float,
+        lensMode: CaptureLensMode,
+    ): Float {
+        val safeDisplayZoom = coerceDisplayZoom(displayZoomRatio)
+        return when (lensMode) {
+            CaptureLensMode.Main -> safeDisplayZoom.coerceIn(
+                main.minActualZoomRatio,
+                main.maxActualZoomRatio,
+            )
+
+            CaptureLensMode.UltraWide -> {
+                val profile = ultraWide ?: main
+                val baseDisplayZoom = ultraWideBaseDisplayZoomRatio ?: 1f
+                (safeDisplayZoom / baseDisplayZoom).coerceIn(
+                    profile.minActualZoomRatio,
+                    profile.maxActualZoomRatio,
+                )
+            }
+        }
+    }
+
+    fun sanitizedForDevice(): CameraZoomSetup {
+        val canBindPhysicalUltraWide = ultraWide?.physicalCameraId != null &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+        val canBindStandaloneUltraWide = ultraWide != null && ultraWide.cameraId != main.cameraId
+        return if (canBindPhysicalUltraWide || canBindStandaloneUltraWide) {
+            this
+        } else {
+            copy(ultraWide = null)
+        }
+    }
+}
+
+private fun buildCameraZoomSetup(
+    cameraProvider: ProcessCameraProvider,
+    mainCameraInfo: CameraInfo,
+): CameraZoomSetup {
+    val logicalCameraInfo = Camera2CameraInfo.from(mainCameraInfo)
+    val mainProfile = mainCameraInfo.toLensProfile()
+    val characteristicsMap = logicalCameraInfo.getCameraCharacteristicsMap()
+    val physicalUltraWideProfile = characteristicsMap
+        .asSequence()
+        .filter { (cameraId, _) -> cameraId != logicalCameraInfo.cameraId }
+        .mapNotNull { (cameraId, characteristics) ->
+            characteristics.toPhysicalLensProfile(cameraId)?.takeIf { profile ->
+                profile.focalLengthMm < mainProfile.focalLengthMm - 0.01f
+            }
+        }
+        .minByOrNull(CameraLensProfile::focalLengthMm)
+    val providerBackProfiles = cameraProvider.availableCameraInfos
+        .asSequence()
+        .filter(::isBackCameraInfo)
+        .map(CameraInfo::toLensProfile)
+        .filter { profile ->
+            profile.cameraId != mainProfile.cameraId &&
+                profile.focalLengthMm < mainProfile.focalLengthMm - 0.01f
+        }
+        .toList()
+    val ultraWideProfile = (
+        providerBackProfiles + listOfNotNull(physicalUltraWideProfile)
+        ).minByOrNull(CameraLensProfile::focalLengthMm)
+
+    Log.d(
+        CameraLogTag,
+        "Zoom setup logicalCameraId=${logicalCameraInfo.cameraId} physicalCount=${characteristicsMap.size} " +
+            "availableBackCameras=${
+                providerBackProfiles.joinToString(
+                    prefix = "[",
+                    postfix = "]",
+                ) { "${it.cameraId}:${it.focalLengthMm}" }
+            } " +
+            "mainCameraId=${mainProfile.cameraId} mainFocal=${mainProfile.focalLengthMm} " +
+            "ultraWideId=${ultraWideProfile?.cameraId} ultraWideFocal=${ultraWideProfile?.focalLengthMm}",
+    )
+
+    return CameraZoomSetup(
+        main = mainProfile,
+        ultraWide = ultraWideProfile,
+    )
+}
+
+private fun CameraInfo.toLensProfile(): CameraLensProfile {
+    val camera2Info = Camera2CameraInfo.from(this)
+    val cameraId = camera2Info.cameraId
+    val focalLengthMm = representativeFocalLengthMm(
+        camera2Info.getCameraCharacteristic(
+        CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS,
+        ),
+    )
+    val zoomState = zoomState.value
+    val minActualZoomRatio = zoomState?.minZoomRatio ?: 1f
+    val maxActualZoomRatio = minOf(
+        zoomState?.maxZoomRatio ?: MaxCaptureZoomRatioCap,
+        MaxCaptureZoomRatioCap,
+    ).coerceAtLeast(minActualZoomRatio)
+    return CameraLensProfile(
+        cameraId = cameraId,
+        physicalCameraId = null,
+        focalLengthMm = focalLengthMm,
+        minActualZoomRatio = minActualZoomRatio,
+        maxActualZoomRatio = maxActualZoomRatio,
+    )
+}
+
+private fun representativeFocalLengthMm(focalLengths: FloatArray?): Float {
+    val values = focalLengths?.toList().orEmpty()
+    return values.minByOrNull { abs(it - StandardReferenceFocalLengthMm) } ?: 1f
+}
+
+private fun CameraCharacteristics.toPhysicalLensProfile(
+    cameraId: String,
+): CameraLensProfile? {
+    val lensFacing = get(CameraCharacteristics.LENS_FACING)
+    if (lensFacing != CameraCharacteristics.LENS_FACING_BACK) return null
+
+    val focalLengthMm = representativeFocalLengthMm(
+        get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS),
+    )
+    val maxDigitalZoom = minOf(
+        get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM) ?: 1f,
+        MaxCaptureZoomRatioCap,
+    ).coerceAtLeast(1f)
+
+    return CameraLensProfile(
+        cameraId = cameraId,
+        physicalCameraId = cameraId,
+        focalLengthMm = focalLengthMm,
+        minActualZoomRatio = 1f,
+        maxActualZoomRatio = maxDigitalZoom,
+    )
+}
+
+private fun isBackCameraInfo(cameraInfo: CameraInfo): Boolean {
+    val lensFacing = Camera2CameraInfo.from(cameraInfo)
+        .getCameraCharacteristic(CameraCharacteristics.LENS_FACING)
+    return lensFacing == CameraCharacteristics.LENS_FACING_BACK
+}
+
+private fun selectorForCameraId(cameraId: String): CameraSelector {
+    return CameraSelector.Builder()
+        .addCameraFilter { cameraInfos ->
+            cameraInfos.filter { info ->
+                Camera2CameraInfo.from(info).cameraId == cameraId
+            }
+        }
+        .build()
+}
+
+private fun formatZoomRatio(ratio: Float): String {
+    val rounded = ratio.roundToInt()
+    return if (abs(ratio - rounded) < 0.05f) {
+        "${rounded}x"
+    } else {
+        String.format(Locale.US, "%.1fx", ratio)
     }
 }
 
