@@ -7,7 +7,7 @@ HOPPER is an Android app for railway wagon accounting. It helps photograph wagon
 - Create separate collections for tracks, shifts, or work sessions
 - Capture wagon photos directly inside the app
 - Recognize wagon numbers with OCR
-- Store wagon order, notes, directions, and wagon states (`PR` / `GR`)
+- Store wagon order, notes, directions, and wagon states (`PR` / `GR` / `BR` / `KL`)
 - Reorder cards manually and keep a fixed journal order
 - Search by collection name, journal description, wagon number, and notes
 - Share wagon lists as text
@@ -31,7 +31,7 @@ HOPPER is an Android app for railway wagon accounting. It helps photograph wagon
 
 Latest APK release:
 
-- [HOPPER APK v0.2.0](https://github.com/AlexDukshanin/hopper/releases/tag/apk-v0.2.0)
+- [HOPPER APK v0.3.0](https://github.com/AlexDukshanin/hopper/releases/tag/apk-v0.3.0)
 
 Included file:
 
@@ -71,6 +71,7 @@ Generated files:
 
 - [apk-v0.1.0 notes](docs/release-notes/apk-v0.1.0.md)
 - [apk-v0.2.0 notes](docs/release-notes/apk-v0.2.0.md)
+- [apk-v0.3.0 notes](docs/release-notes/apk-v0.3.0.md)
 
 ## Developer
 
