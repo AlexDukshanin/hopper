@@ -1,78 +1,60 @@
 # HOPPER
 
-HOPPER is an Android app for railway wagon accounting. It helps photograph wagons, recognize wagon numbers from photos, organize them into collections, add notes, and share full journals with or without images.
+HOPPER - это Android-приложение для ведения журналов железнодорожных вагонов. Оно помогает фотографировать вагоны, распознавать номера прямо на устройстве, сохранять порядок карточек, добавлять заметки и передавать готовые подборки другим пользователям HOPPER.
 
-## Main features
+## Что умеет HOPPER
 
-- Create separate collections for tracks, shifts, or work sessions
-- Capture wagon photos directly inside the app
-- Recognize wagon numbers with OCR
-- Store wagon order, notes, directions, and wagon states (`PR` / `GR` / `BR` / `KL`)
-- Reorder cards manually and keep a fixed journal order
-- Search by collection name, journal description, wagon number, and notes
-- Share wagon lists as text
-- Export and import full Hopper collections with or without photos
-- Adjust photo compression, theme, icon, and card appearance
+- Создавать отдельные подборки для путей, смен, участков или рабочих сессий
+- Снимать вагоны прямо внутри приложения
+- Распознавать номера встроенным OCR прямо на устройстве, без отправки фото в облако
+- Настраивать рамку распознавания в живом превью камеры
+- Использовать зум камеры через ползунок и жест двумя пальцами
+- Добавлять пустые карточки без фото и заполнять их позже вручную
+- Редактировать номер вагона вручную, заменять фото, удалять фото и дописывать заметки
+- Хранить порядок вагонов, направления, заметки и состояния: `ПР`, `ГР`, `БР`, `КЛ`
+- Менять карточки местами и удалять как по одной, так и сразу несколько
+- Переключать журнал между режимом с фото и компактным текстовым видом
+- Искать по всем подборкам или только внутри текущей
+- Искать по названию подборки, описанию журнала, номеру вагона, заметкам и распознанному тексту
 
-## Built with
+## Передача и импорт
 
-- Kotlin
-- Jetpack Compose
-- CameraX
-- ML Kit Text Recognition
-- Room
-- Coil
+- Копирование списка вагонов строкой или столбцом
+- Отправка списка через системное меню Android
+- Экспорт подборки в файл `.hopper` без фото или вместе с фото
+- Импорт подборок из файла `.hopper` через проводник, мессенджеры и меню "Открыть с помощью"
+- Передача подборки без фото через QR-коды Hopper
+- Выбор действия при совпадении названия: заменить подборку, создать копию или отменить импорт
 
-## Package
+## Настройки
 
-- `com.alex.hopper`
+- Темы интерфейса
+- Выбор иконки приложения
+- Размер текста номера на карточке
+- Качество обычных фото
+- Отдельное качество фото при экспорте файла Hopper с изображениями
+- Настройка рамки сканирования прямо пальцами на экране камеры
+- Переключение вида подборок: плитка или список
+- Порядок добавления новых карточек в конкретной подборке: в начало или в конец
+- Добавление направления в начало и конец копируемого списка только для нужной подборки
 
-## Download
+## Скачать
 
-Latest APK release:
+Актуальный релиз:
 
 - [HOPPER APK v0.3.0](https://github.com/AlexDukshanin/hopper/releases/tag/apk-v0.3.0)
 
-Included file:
+Что выбрать:
 
-- `HOPPER-universal-release.apk` — универсальный вариант для большинства пользователей
-- `HOPPER-arm64-v8a-release.apk` — более легкий вариант для большинства современных телефонов
-- `HOPPER-armeabi-v7a-release.apk` — вариант для более старых устройств
-- `HOPPER-x86-release.apk` и `HOPPER-x86_64-release.apk` — в основном для совместимости и тестов
-- `HOPPER-universal-debug.apk` — запасной debug-вариант для тестирования
+- Для большинства современных телефонов лучше всего подходит `HOPPER-arm64-v8a-release.apk`
+- Если не уверены, какой файл нужен, берите `HOPPER-universal-release.apk`
 
-Installation notes:
+## Заметки к релизам
 
-- Release APKs in the GitHub release are installable directly on Android devices
-- For most phones the best choice is `HOPPER-arm64-v8a-release.apk`, and if architecture is unknown use `HOPPER-universal-release.apk`
-- If Android blocks installation, allow installs from the browser or file manager you used to download the APK
-- A dedicated production keystore can be configured later for final public distribution
+- [Заметки к apk-v0.1.0](docs/release-notes/apk-v0.1.0.md)
+- [Заметки к apk-v0.2.0](docs/release-notes/apk-v0.2.0.md)
+- [Заметки к apk-v0.3.0](docs/release-notes/apk-v0.3.0.md)
 
-## Build locally
-
-Build debug APK:
-
-```bash
-./gradlew assembleDebug
-```
-
-Build release APK:
-
-```bash
-./gradlew assembleRelease
-```
-
-Generated files:
-
-- `app/build/outputs/apk/debug/*.apk`
-- `app/build/outputs/apk/release/*.apk`
-
-## Release notes
-
-- [apk-v0.1.0 notes](docs/release-notes/apk-v0.1.0.md)
-- [apk-v0.2.0 notes](docs/release-notes/apk-v0.2.0.md)
-- [apk-v0.3.0 notes](docs/release-notes/apk-v0.3.0.md)
-
-## Developer
+## Разработчик
 
 - AlexDukshanin
